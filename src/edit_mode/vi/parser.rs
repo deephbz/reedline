@@ -120,6 +120,16 @@ impl ParsedViSequence {
             {
                 Some(ViMode::Insert)
             }
+            (Some(Command::Delete), ParseResult::Incomplete)
+            | (Some(Command::DeleteChar), ParseResult::Incomplete)
+            | (Some(Command::DeleteToEnd), ParseResult::Incomplete)
+            | (Some(Command::Delete), ParseResult::Valid(_))
+            | (Some(Command::DeleteChar), ParseResult::Valid(_))
+            | (Some(Command::DeleteToEnd), ParseResult::Valid(_))
+            | (Some(Command::Yank), ParseResult::Valid(_))
+            | (Some(Command::Yank), ParseResult::Incomplete)
+            | (Some(Command::YankInside(_)), ParseResult::Valid(_))
+            | (Some(Command::YankInside(_)), ParseResult::Incomplete) => Some(ViMode::Normal),
             _ => None,
         }
     }
