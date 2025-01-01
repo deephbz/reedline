@@ -62,7 +62,9 @@ impl EditMode for Vi {
         match event.into() {
             Event::Key(KeyEvent {
                 code, modifiers, ..
-            }) => match (self.mode, modifiers, code) {
+            }) => {
+                eprintln!("[DEBUG] Vi mode received key: {:?} with modifiers: {:?}", code, modifiers);
+                match (self.mode, modifiers, code) {
                 (ViMode::Normal, KeyModifiers::NONE, KeyCode::Char('v')) => {
                     self.cache.clear();
                     self.mode = ViMode::Visual;
@@ -160,7 +162,8 @@ impl EditMode for Vi {
                     .insert_keybindings
                     .find_binding(modifiers, code)
                     .unwrap_or(ReedlineEvent::None),
-            },
+            }
+            }
 
             Event::Mouse(_) => ReedlineEvent::Mouse,
             Event::Resize(width, height) => ReedlineEvent::Resize(width, height),

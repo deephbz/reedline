@@ -61,8 +61,11 @@ impl Keybindings {
 
     /// Find a keybinding based on the modifier and keycode
     pub fn find_binding(&self, modifier: KeyModifiers, key_code: KeyCode) -> Option<ReedlineEvent> {
+        eprintln!("[DEBUG] Looking up binding for key: {:?} with modifiers: {:?}", key_code, modifier);
         let key_combo = KeyCombination { modifier, key_code };
-        self.bindings.get(&key_combo).cloned()
+        let result = self.bindings.get(&key_combo).cloned();
+        eprintln!("[DEBUG] Found binding: {:?}", result);
+        result
     }
 
     /// Remove a keybinding

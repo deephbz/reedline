@@ -739,15 +739,29 @@ impl Reedline {
             // print. Otherwise, we can just block until we receive an event.
             #[cfg(feature = "external_printer")]
             if event::poll(EXTERNAL_PRINTER_WAIT)? {
-                events.push(crossterm::event::read()?);
+                let evt = crossterm::event::read()?;
+                if let Event::Key(key) = &evt {
+                    eprintln!("[DEBUG] Raw key event received: {:?} with modifiers: {:?}", key.code, key.modifiers);
+                }
+                events.push(evt);
             }
             #[cfg(not(feature = "external_printer"))]
-            events.push(crossterm::event::read()?);
+            {
+                let evt = crossterm::event::read()?;
+                if let Event::Key(key) = &evt {
+                    eprintln!("[DEBUG] Raw key event received: {:?} with modifiers: {:?}", key.code, key.modifiers);
+                }
+                events.push(evt);
+            }
 
             // Receive all events in the queue without blocking. Will stop when
             // a line of input is completed.
             while !completed(&events) && event::poll(Duration::from_millis(0))? {
-                events.push(crossterm::event::read()?);
+                let evt = crossterm::event::read()?;
+                if let Event::Key(key) = &evt {
+                    eprintln!("[DEBUG] Additional key event: {:?} with modifiers: {:?}", key.code, key.modifiers);
+                }
+                events.push(evt);
             }
 
             // If we believe there's text pasting or resizing going on, batch
