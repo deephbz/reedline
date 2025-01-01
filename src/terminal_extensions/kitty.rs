@@ -20,24 +20,31 @@ pub(crate) struct KittyProtocolGuard {
 
 impl KittyProtocolGuard {
     pub fn set(&mut self, enable: bool) {
-        self.enabled = enable && super::kitty_protocol_available();
+        let available = super::kitty_protocol_available();
+        eprintln!("[DEBUG] Kitty protocol available: {}", available);
+        self.enabled = enable && available;
+        eprintln!("[DEBUG] Kitty protocol enabled: {}", self.enabled);
     }
     pub fn enter(&mut self) {
         if self.enabled && !self.active {
+            eprintln!("[DEBUG] Activating Kitty keyboard protocol with all enhancement flags");
             let _ = execute!(
                 std::io::stdout(),
                 event::PushKeyboardEnhancementFlags(
-                    event::KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
+                    event::KeyboardEnhancementFlags::all()
                 )
             );
 
             self.active = true;
+            eprintln!("[DEBUG] Kitty keyboard protocol activated: {}", self.active);
         }
     }
     pub fn exit(&mut self) {
         if self.active {
+            eprintln!("[DEBUG] Deactivating Kitty keyboard protocol");
             let _ = execute!(std::io::stdout(), event::PopKeyboardEnhancementFlags);
             self.active = false;
+            eprintln!("[DEBUG] Kitty keyboard protocol deactivated");
         }
     }
 }
@@ -45,7 +52,9 @@ impl KittyProtocolGuard {
 impl Drop for KittyProtocolGuard {
     fn drop(&mut self) {
         if self.active {
+            eprintln!("[DEBUG] Cleaning up Kitty keyboard protocol on drop");
             let _ = execute!(std::io::stdout(), event::PopKeyboardEnhancementFlags);
+            eprintln!("[DEBUG] Kitty keyboard protocol cleanup complete");
         }
     }
 }
