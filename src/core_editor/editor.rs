@@ -857,24 +857,20 @@ impl Editor {
         let old_pos = self.insertion_point();
         let buffer_len = self.line_buffer.len();
 
-        if let Some(lp) = self.line_buffer.find_char_left(left_char, true) {
-            if let Some(rp) = self.line_buffer.find_char_right(right_char, true) {
-                // Range of the inside text (exclude left_char and right_char)
-                let inside_start = lp + left_char.len_utf8();
-                if inside_start < rp && rp <= buffer_len {
-                    // Extract the text "inside"
-                    let inside_slice = &self.line_buffer.get_buffer()[inside_start..rp];
-                    if !inside_slice.is_empty() {
-                        // Put that substring into the cut buffer
-                        self.cut_buffer.set(inside_slice, ClipboardMode::Normal);
-                        // Remove it from the buffer
-                        self.line_buffer.clear_range_safe(inside_start, rp);
-                    }
-                    // Place cursor at the position right after the left_char
-                    self.line_buffer
-                        .set_insertion_point(lp + left_char.len_utf8());
-                    return;
+        if let Some((lp, rp)) =
+            self.line_buffer
+                .find_matching_pair(left_char, right_char, self.insertion_point())
+        {
+            let inside_start = lp + left_char.len_utf8();
+            if inside_start < rp && rp <= buffer_len {
+                let inside_slice = &self.line_buffer.get_buffer()[inside_start..rp];
+                if !inside_slice.is_empty() {
+                    self.cut_buffer.set(inside_slice, ClipboardMode::Normal);
+                    self.line_buffer.clear_range_safe(inside_start, rp);
                 }
+                self.line_buffer
+                    .set_insertion_point(lp + left_char.len_utf8());
+                return;
             }
         }
         // If no valid pair was found, restore original cursor
@@ -888,17 +884,19 @@ impl Editor {
         let old_pos = self.insertion_point();
         let buffer_len = self.line_buffer.len();
 
-        if let Some(lp) = self.line_buffer.find_char_left(left_char, true) {
-            if let Some(rp) = self.line_buffer.find_char_right(right_char, true) {
-                let inside_start = lp + left_char.len_utf8();
-                if inside_start < rp && rp <= buffer_len {
-                    let inside_slice = &self.line_buffer.get_buffer()[inside_start..rp];
-                    if !inside_slice.is_empty() {
-                        self.cut_buffer.set(inside_slice, ClipboardMode::Normal);
-                    }
+        if let Some((lp, rp)) =
+            self.line_buffer
+                .find_matching_pair(left_char, right_char, self.insertion_point())
+        {
+            let inside_start = lp + left_char.len_utf8();
+            if inside_start < rp && rp <= buffer_len {
+                let inside_slice = &self.line_buffer.get_buffer()[inside_start..rp];
+                if !inside_slice.is_empty() {
+                    self.cut_buffer.set(inside_slice, ClipboardMode::Normal);
                 }
             }
         }
+
         // Always restore the cursor position
         self.line_buffer.set_insertion_point(old_pos);
     }
