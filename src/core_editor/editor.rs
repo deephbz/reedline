@@ -1160,6 +1160,7 @@ mod test {
         editor.delete_inside('(', ')');
         assert_eq!(editor.get_buffer(), "foo()baz");
         assert_eq!(editor.insertion_point(), 4);
+        assert_eq!(editor.cut_buffer.get().0, "bar");
 
         // Test with cursor outside brackets
         let mut editor = editor_with("foo(bar)baz");
@@ -1167,6 +1168,7 @@ mod test {
         editor.delete_inside('(', ')');
         assert_eq!(editor.get_buffer(), "foo(bar)baz");
         assert_eq!(editor.insertion_point(), 0);
+        assert_eq!(editor.cut_buffer.get().0, "");
 
         // Test with no matching brackets
         let mut editor = editor_with("foo bar baz");
@@ -1174,6 +1176,7 @@ mod test {
         editor.delete_inside('(', ')');
         assert_eq!(editor.get_buffer(), "foo bar baz");
         assert_eq!(editor.insertion_point(), 4);
+        assert_eq!(editor.cut_buffer.get().0, "");
     }
 
     #[test]
@@ -1183,6 +1186,7 @@ mod test {
         editor.delete_inside('"', '"');
         assert_eq!(editor.get_buffer(), "foo\"\"baz");
         assert_eq!(editor.insertion_point(), 4);
+        assert_eq!(editor.cut_buffer.get().0, "bar");
 
         // Test with cursor outside quotes
         let mut editor = editor_with("foo\"bar\"baz");
@@ -1190,6 +1194,7 @@ mod test {
         editor.delete_inside('"', '"');
         assert_eq!(editor.get_buffer(), "foo\"bar\"baz");
         assert_eq!(editor.insertion_point(), 0);
+        assert_eq!(editor.cut_buffer.get().0, "");
 
         // Test with no matching quotes
         let mut editor = editor_with("foo bar baz");
@@ -1226,6 +1231,7 @@ mod test {
         editor.yank_inside('"', '"');
         assert_eq!(editor.get_buffer(), "foo\"bar\"baz"); // Buffer shouldn't change
         assert_eq!(editor.insertion_point(), 5); // Cursor should return to original position
+        assert_eq!(editor.cut_buffer.get().0, "bar");
 
         // Test with no matching quotes
         let mut editor = editor_with("foo bar baz");
@@ -1233,6 +1239,7 @@ mod test {
         editor.yank_inside('"', '"');
         assert_eq!(editor.get_buffer(), "foo bar baz");
         assert_eq!(editor.insertion_point(), 4);
+        assert_eq!(editor.cut_buffer.get().0, "");
     }
 
     #[test]
@@ -1242,11 +1249,13 @@ mod test {
         editor.delete_inside('(', ')');
         assert_eq!(editor.get_buffer(), "foo(bar()qux)quux");
         assert_eq!(editor.insertion_point(), 8);
+        assert_eq!(editor.cut_buffer.get().0, "baz");
 
         editor.move_to_position(4, false); // Move inside outer brackets
         editor.delete_inside('(', ')');
         assert_eq!(editor.get_buffer(), "foo()quux");
         assert_eq!(editor.insertion_point(), 4);
+        assert_eq!(editor.cut_buffer.get().0, "bar()qux");
     }
 
     #[test]
@@ -1256,6 +1265,7 @@ mod test {
         editor.yank_inside('(', ')');
         assert_eq!(editor.get_buffer(), "foo(bar(baz)qux)quux"); // Buffer shouldn't change
         assert_eq!(editor.insertion_point(), 8);
+        assert_eq!(editor.cut_buffer.get().0, "baz");
 
         // Test yanked content by pasting
         editor.paste_cut_buffer();
@@ -1265,5 +1275,6 @@ mod test {
         editor.yank_inside('(', ')');
         assert_eq!(editor.get_buffer(), "foo(bar(bazbaz)qux)quux");
         assert_eq!(editor.insertion_point(), 4);
+        assert_eq!(editor.cut_buffer.get().0, "bar(bazbaz)qux");
     }
 }
