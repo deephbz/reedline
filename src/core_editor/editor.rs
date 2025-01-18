@@ -247,25 +247,39 @@ impl Editor {
     }
 
     fn handle_motion(&mut self, motion: MotionKind, action: MotionAction) {
-        let old_cursor = self.insertion_point();
-        let destination = self.motion_destination(motion);
+        let start_idx = self.line_buffer.insertion_point();
+        let end_idx = self.motion_destination(motion);
 
-        // Possibly apply selection logic
-        // If MoveCursor{select:true}, we set or update selection anchor
-        // If MoveCursor{select:false}, we clear selection anchor
-        // If Cut/Copy/Delete, we compute the range [min, max] of old_cursor..destination
+        // Compute the range to operate on
+        let (range_start, range_end) = if end_idx > start_idx {
+            (start_idx, end_idx)
+        } else {
+            (end_idx, start_idx)
+        };
+
+        // Apply the action
         match action {
             MotionAction::MoveCursor { select } => {
-                self.move_cursor_to(destination, select);
-            }
-            MotionAction::Cut => {
-                self.cut_range(old_cursor, destination);
+                if select {
+                    self.line_buffer.set_selection_range(start_idx, end_idx);
+                } else {
+                    self.line_buffer.reset_selection();
+                }
+                self.line_buffer.set_insertion_point(end_idx);
             }
             MotionAction::Copy => {
-                self.copy_range(old_cursor, destination);
+                let content = &self.line_buffer.get_buffer()[range_start..range_end];
+                self.cut_buffer.set(content, ClipboardMode::Normal);
+            }
+            MotionAction::Cut => {
+                let content = &self.line_buffer.get_buffer()[range_start..range_end];
+                self.cut_buffer.set(content, ClipboardMode::Normal);
+                self.line_buffer.clear_range(range_start..range_end);
+                self.line_buffer.set_insertion_point(range_start);
             }
             MotionAction::Delete => {
-                self.delete_range(old_cursor, destination);
+                self.line_buffer.clear_range(range_start..range_end);
+                self.line_buffer.set_insertion_point(range_start);
             }
         }
     }
@@ -276,15 +290,22 @@ impl Editor {
             MotionKind::MoveRight => self.line_buffer.grapheme_right_index(),
             MotionKind::MoveWordLeft => self.line_buffer.word_left_index(),
             MotionKind::MoveWordRight => self.line_buffer.word_right_start_index(),
-            MotionKind::MoveToLineStart => {
-                // your existing `move_to_line_start` logic, but returning the index
-                self.line_buffer.find_current_line_start() 
-            }
-            // ...
+            MotionKind::MoveBigWordLeft => self.line_buffer.big_word_left_index(),
+            MotionKind::MoveBigWordRight => self.line_buffer.big_word_right_start_index(),
+            MotionKind::MoveToLineStart => self.line_buffer.find_current_line_start(),
+            MotionKind::MoveToLineEnd => self.line_buffer.find_current_line_end(),
+            MotionKind::MoveToStart => 0,
+            MotionKind::MoveToEnd => self.line_buffer.get_buffer().len(),
+            MotionKind::MoveWordRightEnd => self.line_buffer.word_right_end_index(),
+            MotionKind::MoveBigWordRightEnd => self.line_buffer.big_word_right_end_index(),
             MotionKind::MoveUntilChar { c, inclusive, forward } => {
-                // unify your “move_right_until_char(c, before, current_line)” code 
-                // or “cut_right_until_char(c, before, current_line)” code
-                // in one place. Return the offset we should jump to.
+                if forward {
+                    let offset = self.line_buffer.find_next_char(c, inclusive);
+                    offset.unwrap_or_else(|| self.line_buffer.get_buffer().len())
+                } else {
+                    let offset = self.line_buffer.find_previous_char(c, inclusive);
+                    offset.unwrap_or(0)
+                }
             }
         }
     }
@@ -389,23 +410,81 @@ impl Editor {
     }
 
     pub(crate) fn move_to_start(&mut self, select: bool) {
-        self.update_selection_anchor(select);
-        self.line_buffer.move_to_start();
+        self.handle_motion(MotionKind::MoveToStart, MotionAction::MoveCursor { select });
     }
 
     pub(crate) fn move_to_end(&mut self, select: bool) {
-        self.update_selection_anchor(select);
-        self.line_buffer.move_to_end();
+        self.handle_motion(MotionKind::MoveToEnd, MotionAction::MoveCursor { select });
     }
 
     pub(crate) fn move_to_line_start(&mut self, select: bool) {
-        self.update_selection_anchor(select);
-        self.line_buffer.move_to_line_start();
+        self.handle_motion(MotionKind::MoveToLineStart, MotionAction::MoveCursor { select });
     }
 
     pub(crate) fn move_to_line_end(&mut self, select: bool) {
-        self.update_selection_anchor(select);
-        self.line_buffer.move_to_line_end();
+        self.handle_motion(MotionKind::MoveToLineEnd, MotionAction::MoveCursor { select });
+    }
+
+    pub(crate) fn move_left(&mut self, select: bool) {
+        self.handle_motion(MotionKind::MoveLeft, MotionAction::MoveCursor { select });
+    }
+
+    pub(crate) fn move_right(&mut self, select: bool) {
+        self.handle_motion(MotionKind::MoveRight, MotionAction::MoveCursor { select });
+    }
+
+    pub(crate) fn move_word_left(&mut self, select: bool) {
+        self.handle_motion(MotionKind::MoveWordLeft, MotionAction::MoveCursor { select });
+    }
+
+    pub(crate) fn move_big_word_left(&mut self, select: bool) {
+        self.handle_motion(MotionKind::MoveBigWordLeft, MotionAction::MoveCursor { select });
+    }
+
+    pub(crate) fn move_word_right(&mut self, select: bool) {
+        self.handle_motion(MotionKind::MoveWordRight, MotionAction::MoveCursor { select });
+    }
+
+    pub(crate) fn move_word_right_end(&mut self, select: bool) {
+        self.handle_motion(MotionKind::MoveWordRightEnd, MotionAction::MoveCursor { select });
+    }
+
+    pub(crate) fn move_big_word_right_end(&mut self, select: bool) {
+        self.handle_motion(MotionKind::MoveBigWordRightEnd, MotionAction::MoveCursor { select });
+    }
+
+    pub(crate) fn move_right_until_char(
+        &mut self,
+        c: char,
+        before_char: bool,
+        current_line: bool,
+        select: bool,
+    ) {
+        self.handle_motion(
+            MotionKind::MoveUntilChar {
+                c,
+                inclusive: !before_char,
+                forward: true,
+            },
+            MotionAction::MoveCursor { select },
+        );
+    }
+
+    pub(crate) fn move_left_until_char(
+        &mut self,
+        c: char,
+        before_char: bool,
+        current_line: bool,
+        select: bool,
+    ) {
+        self.handle_motion(
+            MotionKind::MoveUntilChar {
+                c,
+                inclusive: !before_char,
+                forward: false,
+            },
+            MotionAction::MoveCursor { select },
+        );
     }
 
     fn undo(&mut self) {
@@ -481,191 +560,95 @@ impl Editor {
     }
 
     fn cut_word_left(&mut self) {
-        let insertion_offset = self.line_buffer.insertion_point();
-        let left_index = self.line_buffer.word_left_index();
-        if left_index < insertion_offset {
-            let cut_range = left_index..insertion_offset;
-            self.cut_buffer.set(
-                &self.line_buffer.get_buffer()[cut_range.clone()],
-                ClipboardMode::Normal,
-            );
-            self.line_buffer.clear_range(cut_range);
-            self.line_buffer.set_insertion_point(left_index);
-        }
+        self.handle_motion(MotionKind::MoveWordLeft, MotionAction::Cut);
     }
 
     fn cut_big_word_left(&mut self) {
-        let insertion_offset = self.line_buffer.insertion_point();
-        let left_index = self.line_buffer.big_word_left_index();
-        if left_index < insertion_offset {
-            let cut_range = left_index..insertion_offset;
-            self.cut_buffer.set(
-                &self.line_buffer.get_buffer()[cut_range.clone()],
-                ClipboardMode::Normal,
-            );
-            self.line_buffer.clear_range(cut_range);
-            self.line_buffer.set_insertion_point(left_index);
-        }
+        self.handle_motion(MotionKind::MoveBigWordLeft, MotionAction::Cut);
     }
 
     fn cut_word_right(&mut self) {
-        let insertion_offset = self.line_buffer.insertion_point();
-        let right_index = self.line_buffer.word_right_index();
-        if right_index > insertion_offset {
-            let cut_range = insertion_offset..right_index;
-            self.cut_buffer.set(
-                &self.line_buffer.get_buffer()[cut_range.clone()],
-                ClipboardMode::Normal,
-            );
-            self.line_buffer.clear_range(cut_range);
-        }
+        self.handle_motion(MotionKind::MoveWordRightEnd, MotionAction::Cut);
     }
 
     fn cut_big_word_right(&mut self) {
-        let insertion_offset = self.line_buffer.insertion_point();
-        let right_index = self.line_buffer.next_whitespace();
-        if right_index > insertion_offset {
-            let cut_range = insertion_offset..right_index;
-            self.cut_buffer.set(
-                &self.line_buffer.get_buffer()[cut_range.clone()],
-                ClipboardMode::Normal,
-            );
-            self.line_buffer.clear_range(cut_range);
-        }
+        self.handle_motion(MotionKind::MoveBigWordRightEnd, MotionAction::Cut);
     }
 
     fn cut_word_right_to_next(&mut self) {
-        let insertion_offset = self.line_buffer.insertion_point();
-        let right_index = self.line_buffer.word_right_start_index();
-        if right_index > insertion_offset {
-            let cut_range = insertion_offset..right_index;
-            self.cut_buffer.set(
-                &self.line_buffer.get_buffer()[cut_range.clone()],
-                ClipboardMode::Normal,
-            );
-            self.line_buffer.clear_range(cut_range);
-        }
+        self.handle_motion(MotionKind::MoveWordRight, MotionAction::Cut);
     }
 
     fn cut_big_word_right_to_next(&mut self) {
-        let insertion_offset = self.line_buffer.insertion_point();
-        let right_index = self.line_buffer.big_word_right_start_index();
-        if right_index > insertion_offset {
-            let cut_range = insertion_offset..right_index;
-            self.cut_buffer.set(
-                &self.line_buffer.get_buffer()[cut_range.clone()],
-                ClipboardMode::Normal,
-            );
-            self.line_buffer.clear_range(cut_range);
-        }
-    }
-
-    fn cut_char(&mut self) {
-        let insertion_offset = self.line_buffer.insertion_point();
-        let right_index = self.line_buffer.grapheme_right_index();
-        if right_index > insertion_offset {
-            let cut_range = insertion_offset..right_index;
-            self.cut_buffer.set(
-                &self.line_buffer.get_buffer()[cut_range.clone()],
-                ClipboardMode::Normal,
-            );
-            self.line_buffer.clear_range(cut_range);
-        }
-    }
-
-    fn insert_cut_buffer_before(&mut self) {
-        self.delete_selection();
-        insert_clipboard_content_before(&mut self.line_buffer, self.cut_buffer.deref_mut())
-    }
-
-    fn insert_cut_buffer_after(&mut self) {
-        self.delete_selection();
-        match self.cut_buffer.get() {
-            (content, ClipboardMode::Normal) => {
-                self.line_buffer.move_right();
-                self.line_buffer.insert_str(&content);
-            }
-            (mut content, ClipboardMode::Lines) => {
-                // TODO: Simplify that?
-                self.line_buffer.move_to_line_start();
-                self.line_buffer.move_line_down();
-                if !content.ends_with('\n') {
-                    // TODO: Make sure platform requirements are met
-                    content.push('\n');
-                }
-                self.line_buffer.insert_str(&content);
-            }
-        }
-    }
-
-    fn move_right_until_char(
-        &mut self,
-        c: char,
-        before_char: bool,
-        current_line: bool,
-        select: bool,
-    ) {
-        self.update_selection_anchor(select);
-        if before_char {
-            self.line_buffer.move_right_before(c, current_line);
-        } else {
-            self.line_buffer.move_right_until(c, current_line);
-        }
-    }
-
-    fn move_left_until_char(
-        &mut self,
-        c: char,
-        before_char: bool,
-        current_line: bool,
-        select: bool,
-    ) {
-        self.update_selection_anchor(select);
-        if before_char {
-            self.line_buffer.move_left_before(c, current_line);
-        } else {
-            self.line_buffer.move_left_until(c, current_line);
-        }
+        self.handle_motion(MotionKind::MoveBigWordRight, MotionAction::Cut);
     }
 
     fn cut_right_until_char(&mut self, c: char, before_char: bool, current_line: bool) {
-        if let Some(index) = self.line_buffer.find_char_right(c, current_line) {
-            // Saving the section of the string that will be deleted to be
-            // stored into the buffer
-            let extra = if before_char { 0 } else { c.len_utf8() };
-            let cut_slice =
-                &self.line_buffer.get_buffer()[self.line_buffer.insertion_point()..index + extra];
-
-            if !cut_slice.is_empty() {
-                self.cut_buffer.set(cut_slice, ClipboardMode::Normal);
-
-                if before_char {
-                    self.line_buffer.delete_right_before_char(c, current_line);
-                } else {
-                    self.line_buffer.delete_right_until_char(c, current_line);
-                }
-            }
-        }
+        self.handle_motion(
+            MotionKind::MoveUntilChar {
+                c,
+                inclusive: !before_char,
+                forward: true,
+            },
+            MotionAction::Cut,
+        );
     }
 
     fn cut_left_until_char(&mut self, c: char, before_char: bool, current_line: bool) {
-        if let Some(index) = self.line_buffer.find_char_left(c, current_line) {
-            // Saving the section of the string that will be deleted to be
-            // stored into the buffer
-            let extra = if before_char { c.len_utf8() } else { 0 };
-            let cut_slice =
-                &self.line_buffer.get_buffer()[index + extra..self.line_buffer.insertion_point()];
+        self.handle_motion(
+            MotionKind::MoveUntilChar {
+                c,
+                inclusive: !before_char,
+                forward: false,
+            },
+            MotionAction::Cut,
+        );
+    }
 
-            if !cut_slice.is_empty() {
-                self.cut_buffer.set(cut_slice, ClipboardMode::Normal);
+    fn copy_word_left(&mut self) {
+        self.handle_motion(MotionKind::MoveWordLeft, MotionAction::Copy);
+    }
 
-                if before_char {
-                    self.line_buffer.delete_left_before_char(c, current_line);
-                } else {
-                    self.line_buffer.delete_left_until_char(c, current_line);
-                }
-            }
-        }
+    fn copy_big_word_left(&mut self) {
+        self.handle_motion(MotionKind::MoveBigWordLeft, MotionAction::Copy);
+    }
+
+    fn copy_word_right(&mut self) {
+        self.handle_motion(MotionKind::MoveWordRightEnd, MotionAction::Copy);
+    }
+
+    fn copy_big_word_right(&mut self) {
+        self.handle_motion(MotionKind::MoveBigWordRightEnd, MotionAction::Copy);
+    }
+
+    fn copy_word_right_to_next(&mut self) {
+        self.handle_motion(MotionKind::MoveWordRight, MotionAction::Copy);
+    }
+
+    fn copy_big_word_right_to_next(&mut self) {
+        self.handle_motion(MotionKind::MoveBigWordRight, MotionAction::Copy);
+    }
+
+    fn copy_right_until_char(&mut self, c: char, before_char: bool, current_line: bool) {
+        self.handle_motion(
+            MotionKind::MoveUntilChar {
+                c,
+                inclusive: !before_char,
+                forward: true,
+            },
+            MotionAction::Copy,
+        );
+    }
+
+    fn copy_left_until_char(&mut self, c: char, before_char: bool, current_line: bool) {
+        self.handle_motion(
+            MotionKind::MoveUntilChar {
+                c,
+                inclusive: !before_char,
+                forward: false,
+            },
+            MotionAction::Copy,
+        );
     }
 
     fn replace_char(&mut self, character: char) {
