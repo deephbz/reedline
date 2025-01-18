@@ -1,7 +1,7 @@
 use super::{edit_stack::EditStack, Clipboard, ClipboardMode, LineBuffer};
 #[cfg(feature = "system_clipboard")]
 use crate::core_editor::get_system_clipboard;
-use crate::enums::{EditType, UndoBehavior};
+use crate::enums::{EditType, UndoBehavior, MotionKind, MotionAction};
 use crate::{core_editor::get_local_clipboard, EditCommand};
 use std::ops::DerefMut;
 
@@ -48,6 +48,51 @@ impl Editor {
 
     pub(crate) fn run_edit_command(&mut self, command: &EditCommand) {
         match command {
+            // Insertion
+            EditCommand::InsertChar(c) => self.insert_char(*c),
+            EditCommand::InsertString(s) => self.insert_str(s),
+            EditCommand::InsertNewline => self.insert_newline(),
+
+            // Replacements
+            EditCommand::ReplaceChar(chr) => self.replace_char(*chr),
+            EditCommand::ReplaceChars(n, s) => self.replace_chars(*n, s),
+
+            // Our big new parametric command
+            EditCommand::Motion { motion, action } => {
+                self.handle_motion(*motion, *action);
+            }
+
+            // Single grapheme removal
+            EditCommand::Backspace => self.backspace(),
+            EditCommand::Delete => self.delete(),
+
+            // Inside-pair commands
+            EditCommand::OperateInsidePair { left_char, right_char, action } => {
+                match action {
+                    PairAction::CutInside => self.cut_inside(*left_char, *right_char),
+                    PairAction::YankInside => self.yank_inside(*left_char, *right_char),
+                }
+            }
+
+            // Undo / redo
+            EditCommand::Undo => self.undo(),
+            EditCommand::Redo => self.redo(),
+
+            // Word transformations
+            EditCommand::SwapGraphemes => self.line_buffer.swap_graphemes(),
+            EditCommand::SwapWords => self.line_buffer.swap_words(),
+            EditCommand::UppercaseWord => self.line_buffer.uppercase_word(),
+            EditCommand::LowercaseWord => self.line_buffer.lowercase_word(),
+            EditCommand::SwitchcaseChar => self.line_buffer.switchcase_char(),
+            EditCommand::CapitalizeChar => self.line_buffer.capitalize_char(),
+
+            // Others
+            EditCommand::SelectAll => self.select_all(),
+            EditCommand::Clear => self.line_buffer.clear(),
+            EditCommand::ClearToLineEnd => self.line_buffer.clear_to_line_end(),
+            EditCommand::CutSelection => self.cut_selection_to_cut_buffer(),
+            EditCommand::CopySelection => self.copy_selection_to_cut_buffer(),
+            EditCommand::PasteCutBuffer => self.paste_cut_buffer(),
             EditCommand::MoveToStart { select } => self.move_to_start(*select),
             EditCommand::MoveToLineStart { select } => self.move_to_line_start(*select),
             EditCommand::MoveToEnd { select } => self.move_to_end(*select),
@@ -200,6 +245,81 @@ impl Editor {
 
         self.update_undo_state(new_undo_behavior);
     }
+
+    fn handle_motion(&mut self, motion: MotionKind, action: MotionAction) {
+        let old_cursor = self.insertion_point();
+        let destination = self.motion_destination(motion);
+
+        // Possibly apply selection logic
+        // If MoveCursor{select:true}, we set or update selection anchor
+        // If MoveCursor{select:false}, we clear selection anchor
+        // If Cut/Copy/Delete, we compute the range [min, max] of old_cursor..destination
+        match action {
+            MotionAction::MoveCursor { select } => {
+                self.move_cursor_to(destination, select);
+            }
+            MotionAction::Cut => {
+                self.cut_range(old_cursor, destination);
+            }
+            MotionAction::Copy => {
+                self.copy_range(old_cursor, destination);
+            }
+            MotionAction::Delete => {
+                self.delete_range(old_cursor, destination);
+            }
+        }
+    }
+
+    fn motion_destination(&self, motion: MotionKind) -> usize {
+        match motion {
+            MotionKind::MoveLeft => self.line_buffer.grapheme_left_index(),
+            MotionKind::MoveRight => self.line_buffer.grapheme_right_index(),
+            MotionKind::MoveWordLeft => self.line_buffer.word_left_index(),
+            MotionKind::MoveWordRight => self.line_buffer.word_right_start_index(),
+            MotionKind::MoveToLineStart => {
+                // your existing `move_to_line_start` logic, but returning the index
+                self.line_buffer.find_current_line_start() 
+            }
+            // ...
+            MotionKind::MoveUntilChar { c, inclusive, forward } => {
+                // unify your “move_right_until_char(c, before, current_line)” code 
+                // or “cut_right_until_char(c, before, current_line)” code
+                // in one place. Return the offset we should jump to.
+            }
+        }
+    }
+
+    fn move_cursor_to(&mut self, new_offset: usize, select: bool) {
+        if select {
+            self.selection_anchor = self.selection_anchor.or(Some(self.insertion_point()));
+        } else {
+            self.selection_anchor = None;
+        }
+        self.line_buffer.set_insertion_point(new_offset);
+    }
+
+    fn cut_range(&mut self, start: usize, end: usize) {
+        let (s, e) = if start <= end { (start, end) } else { (end, start) };
+        let slice = &self.line_buffer.get_buffer()[s..e];
+        self.cut_buffer.set(slice, ClipboardMode::Normal);
+        self.line_buffer.clear_range(s..e);
+        // set insertion_point to s
+        self.line_buffer.set_insertion_point(s);
+    }
+
+    fn copy_range(&mut self, start: usize, end: usize) {
+        let (s, e) = if start <= end { (start, end) } else { (end, start) };
+        let slice = &self.line_buffer.get_buffer()[s..e];
+        self.cut_buffer.set(slice, ClipboardMode::Normal);
+        // do not remove text from buffer
+    }
+
+    fn delete_range(&mut self, start: usize, end: usize) {
+        let (s, e) = if start <= end { (start, end) } else { (end, start) };
+        self.line_buffer.clear_range(s..e);
+        self.line_buffer.set_insertion_point(s);
+    }
+
     fn update_selection_anchor(&mut self, select: bool) {
         self.selection_anchor = if select {
             self.selection_anchor

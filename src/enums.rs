@@ -14,337 +14,109 @@ pub enum Signal {
     CtrlD, // End terminal session
 }
 
+/// How we compute the “target index” or “destination” from the current cursor.
+#[derive(Copy, Clone, Debug)]
+pub enum MotionKind {
+    MoveLeft,
+    MoveRight,
+    MoveWordLeft,
+    MoveWordRight,
+    MoveBigWordLeft,
+    MoveBigWordRight,
+    MoveToLineStart,
+    MoveToLineEnd,
+    // Char-based search
+    MoveUntilChar {
+        c: char,
+        inclusive: bool,  // do we include that char in the motion?
+        forward: bool,    // left vs. right
+    },
+    // etc. Add more as needed, e.g. MoveLineUp, MoveLineDown, NextWhitespace, etc.
+}
+
+#[derive(Copy, Clone, Debug)]
+pub enum MotionAction {
+    /// Just move the cursor, optionally enabling selection if `select==true`.
+    MoveCursor { select: bool },
+    /// Copy that range into the cut/clipboard buffer (does not remove).
+    Copy,
+    /// Cut that range (copy + remove from line buffer).
+    Cut,
+    /// Delete that range (remove from line buffer but do not copy).
+    Delete,
+    /// Possibly more exotic actions: e.g. “SwapCaseInRange”
+    // ...
+}
+
+/// For inside-pair operations:
+#[derive(Copy, Clone, Debug)]
+pub enum PairAction {
+    CutInside,
+    YankInside,
+    // or “DeleteInside”, “ChangeInside”, etc.
+}
+
+
+
 /// Editing actions which can be mapped to key bindings.
 ///
 /// Executed by `Reedline::run_edit_commands()`
-#[non_exhaustive]
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq, EnumIter)]
+/// The core editing commands recognized by the `Editor`.
+#[derive(Clone, Debug)]
 pub enum EditCommand {
-    /// Move to the start of the buffer
-    MoveToStart {
-        /// Select the text between the current cursor position and destination
-        select: bool,
-    },
-
-    /// Move to the start of the current line
-    MoveToLineStart {
-        /// Select the text between the current cursor position and destination
-        select: bool,
-    },
-
-    /// Move to the end of the buffer
-    MoveToEnd {
-        /// Select the text between the current cursor position and destination
-        select: bool,
-    },
-
-    /// Move to the end of the current line
-    MoveToLineEnd {
-        /// Select the text between the current cursor position and destination
-        select: bool,
-    },
-
-    /// Move one character to the left
-    MoveLeft {
-        /// Select the text between the current cursor position and destination
-        select: bool,
-    },
-
-    /// Move one character to the right
-    MoveRight {
-        /// Select the text between the current cursor position and destination
-        select: bool,
-    },
-
-    /// Move one word to the left
-    MoveWordLeft {
-        /// Select the text between the current cursor position and destination
-        select: bool,
-    },
-
-    /// Move one WORD to the left
-    MoveBigWordLeft {
-        /// Select the text between the current cursor position and destination
-        select: bool,
-    },
-
-    /// Move one word to the right
-    MoveWordRight {
-        /// Select the text between the current cursor position and destination
-        select: bool,
-    },
-
-    /// Move one word to the right, stop at start of word
-    MoveWordRightStart {
-        /// Select the text between the current cursor position and destination
-        select: bool,
-    },
-
-    /// Move one WORD to the right, stop at start of WORD
-    MoveBigWordRightStart {
-        /// Select the text between the current cursor position and destination
-        select: bool,
-    },
-
-    /// Move one word to the right, stop at end of word
-    MoveWordRightEnd {
-        /// Select the text between the current cursor position and destination
-        select: bool,
-    },
-
-    /// Move one WORD to the right, stop at end of WORD
-    MoveBigWordRightEnd {
-        /// Select the text between the current cursor position and destination
-        select: bool,
-    },
-
-    /// Move to position
-    MoveToPosition {
-        /// Position to move to
-        position: usize,
-        /// Select the text between the current cursor position and destination
-        select: bool,
-    },
-
-    /// Insert a character at the current insertion point
+    /// Insert the given character at the cursor (inserting, not replacing).
     InsertChar(char),
-
-    /// Insert a string at the current insertion point
+    /// Insert the given string at the cursor.
     InsertString(String),
-
-    /// Inserts the system specific new line character
-    ///
-    /// - On Unix systems LF (`"\n"`)
-    /// - On Windows CRLF (`"\r\n"`)
+    /// Insert a newline (accounting for CRLF vs LF if desired).
     InsertNewline,
 
-    /// Replace a character
+    /// Replace one character under the cursor by `chr` (delete+insert).
     ReplaceChar(char),
-
-    /// Replace characters with string
+    /// Replace `n_chars` characters under the cursor with the given string.
     ReplaceChars(usize, String),
 
-    /// Backspace delete from the current insertion point
-    Backspace,
+    /// A parametric command that uses a `MotionKind` to compute a range
+    /// and then an action to apply (move cursor, cut, copy, delete, select).
+    Motion {
+        motion: MotionKind,
+        action: MotionAction,
+    },
 
-    /// Delete in-place from the current insertion point
+    /// Delete one grapheme to the left (like Backspace).
+    Backspace,
+    /// Delete one grapheme to the right.
     Delete,
 
-    /// Cut the grapheme right from the current insertion point
-    CutChar,
+    /// Operate inside pair of matching delimiters, e.g. "di(" or "ya{"
+    OperateInsidePair {
+        left_char: char,
+        right_char: char,
+        action: PairAction,
+    },
 
-    /// Backspace delete a word from the current insertion point
-    BackspaceWord,
-
-    /// Delete in-place a word from the current insertion point
-    DeleteWord,
-
-    /// Clear the current buffer
-    Clear,
-
-    /// Clear to the end of the current line
-    ClearToLineEnd,
-
-    /// Insert completion: entire completion if there is only one possibility, or else up to shared prefix.
-    Complete,
-
-    /// Cut the current line
-    CutCurrentLine,
-
-    /// Cut from the start of the buffer to the insertion point
-    CutFromStart,
-
-    /// Cut from the start of the current line to the insertion point
-    CutFromLineStart,
-
-    /// Cut from the insertion point to the end of the buffer
-    CutToEnd,
-
-    /// Cut from the insertion point to the end of the current line
-    CutToLineEnd,
-
-    /// Cut the word left of the insertion point
-    CutWordLeft,
-
-    /// Cut the WORD left of the insertion point
-    CutBigWordLeft,
-
-    /// Cut the word right of the insertion point
-    CutWordRight,
-
-    /// Cut the word right of the insertion point
-    CutBigWordRight,
-
-    /// Cut the word right of the insertion point and any following space
-    CutWordRightToNext,
-
-    /// Cut the WORD right of the insertion point and any following space
-    CutBigWordRightToNext,
-
-    /// Paste the cut buffer in front of the insertion point (Emacs, vi `P`)
-    PasteCutBufferBefore,
-
-    /// Paste the cut buffer in front of the insertion point (vi `p`)
-    PasteCutBufferAfter,
-
-    /// Upper case the current word
-    UppercaseWord,
-
-    /// Lower case the current word
-    LowercaseWord,
-
-    /// Capitalize the current character
-    CapitalizeChar,
-
-    /// Switch the case of the current character
-    SwitchcaseChar,
-
-    /// Swap the current word with the word to the right
-    SwapWords,
-
-    /// Swap the current grapheme/character with the one to the right
-    SwapGraphemes,
-
-    /// Undo the previous edit command
+    /// Undo or redo
     Undo,
-
-    /// Redo an edit command from the undo history
     Redo,
 
-    /// CutUntil right until char
-    CutRightUntil(char),
+    /// Word-level transformations or advanced manipulations
+    SwapGraphemes,
+    SwapWords,
+    UppercaseWord,
+    LowercaseWord,
+    SwitchcaseChar,
+    CapitalizeChar,
 
-    /// CutUntil right before char
-    CutRightBefore(char),
-
-    /// CutUntil right until char
-    MoveRightUntil {
-        /// Char to move towards
-        c: char,
-        /// Select the text between the current cursor position and destination
-        select: bool,
-    },
-
-    /// CutUntil right before char
-    MoveRightBefore {
-        /// Char to move towards
-        c: char,
-        /// Select the text between the current cursor position and destination
-        select: bool,
-    },
-
-    /// CutUntil left until char
-    CutLeftUntil(char),
-
-    /// CutUntil left before char
-    CutLeftBefore(char),
-
-    /// Move left until char
-    MoveLeftUntil {
-        /// Char to move towards
-        c: char,
-        /// Select the text between the current cursor position and destination
-        select: bool,
-    },
-
-    /// Move left before char
-    MoveLeftBefore {
-        /// Char to move towards
-        c: char,
-        /// Select the text between the current cursor position and destination
-        select: bool,
-    },
-
-    /// Select whole input buffer
+    /// Possibly more specialized commands if needed
     SelectAll,
-
-    /// Cut selection to local buffer
+    Clear,              // clear entire line buffer
+    ClearToLineEnd,
     CutSelection,
-
-    /// Copy selection to local buffer
     CopySelection,
-
-    /// Paste content from local buffer at the current cursor position
-    Paste,
-
-    /// Copy from the start of the buffer to the insertion point
-    CopyFromStart,
-
-    /// Copy from the start of the current line to the insertion point
-    CopyFromLineStart,
-
-    /// Copy from the insertion point to the end of the buffer
-    CopyToEnd,
-
-    /// Copy from the insertion point to the end of the current line
-    CopyToLineEnd,
-
-    /// Copy the current line
-    CopyCurrentLine,
-
-    /// Copy the word left of the insertion point
-    CopyWordLeft,
-
-    /// Copy the WORD left of the insertion point
-    CopyBigWordLeft,
-
-    /// Copy the word right of the insertion point
-    CopyWordRight,
-
-    /// Copy the WORD right of the insertion point
-    CopyBigWordRight,
-
-    /// Copy the word right of the insertion point and any following space
-    CopyWordRightToNext,
-
-    /// Copy the WORD right of the insertion point and any following space
-    CopyBigWordRightToNext,
-
-    /// Copy one character to the left
-    CopyLeft,
-
-    /// Copy one character to the right
-    CopyRight,
-
-    /// Copy until right until char
-    CopyRightUntil(char),
-
-    /// Copy right before char
-    CopyRightBefore(char),
-
-    /// Copy left until char
-    CopyLeftUntil(char),
-
-    /// Copy left before char
-    CopyLeftBefore(char),
-
-    /// Cut selection to system clipboard
-    #[cfg(feature = "system_clipboard")]
-    CutSelectionSystem,
-
-    /// Copy selection to system clipboard
-    #[cfg(feature = "system_clipboard")]
-    CopySelectionSystem,
-
-    /// Paste content from system clipboard at the current cursor position
-    #[cfg(feature = "system_clipboard")]
-    PasteSystem,
-
-    /// Delete text between matching characters atomically
-    CutInside {
-        /// Left character of the pair
-        left_char: char,
-        /// Right character of the pair (usually matching bracket)
-        right_char: char,
-    },
-    /// Yank text between matching characters atomically
-    YankInside {
-        /// Left character of the pair
-        left_char: char,
-        /// Right character of the pair (usually matching bracket)
-        right_char: char,
-    },
+    PasteCutBuffer,
+    // etc.
 }
+
 
 impl Display for EditCommand {
     fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
