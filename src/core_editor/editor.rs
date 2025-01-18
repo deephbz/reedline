@@ -169,11 +169,6 @@ impl Editor {
             EditCommand::CopySelectionSystem => self.copy_selection_to_system(),
             #[cfg(feature = "system_clipboard")]
             EditCommand::PasteSystem => self.paste_from_system(),
-            EditCommand::DeleteToChar {
-                character,
-                before_char,
-                current_line,
-            } => self.delete_to_char(*character, *before_char, *current_line),
             EditCommand::DeleteInside {
                 left_char,
                 right_char,
@@ -860,8 +855,8 @@ impl Editor {
 
         // Find matching pairs
         if let (Some(left_pos), Some(right_pos)) = (
-            self.line_buffer.find_char_backward(left_char, true),
-            self.line_buffer.find_char_forward(right_char, true),
+            self.line_buffer.find_char_left(left_char, true),
+            self.line_buffer.find_char_right(right_char, true),
         ) {
             // Select the text between the characters
             self.move_to_position(left_pos + 1, false);
@@ -885,8 +880,8 @@ impl Editor {
 
         // Find matching pairs
         if let (Some(left_pos), Some(right_pos)) = (
-            self.line_buffer.find_char_backward(left_char, true),
-            self.line_buffer.find_char_forward(right_char, true),
+            self.line_buffer.find_char_left(left_char, true),
+            self.line_buffer.find_char_right(right_char, true),
         ) {
             // Select the text between the characters
             self.move_to_position(left_pos + 1, false);
@@ -897,32 +892,6 @@ impl Editor {
 
             // Reset selection and restore cursor
             self.reset_selection();
-            self.move_to_position(start_pos, false);
-        }
-    }
-
-    /// Delete text from cursor to matching character atomically
-    fn delete_to_char(&mut self, character: char, before_char: bool, current_line: bool) {
-        // Save current position
-        let start_pos = self.insertion_point();
-
-        // Find the target character
-        if let Some(target_pos) = if before_char {
-            self.line_buffer
-                .find_char_forward_before(character, current_line)
-        } else {
-            self.line_buffer.find_char_forward(character, current_line)
-        } {
-            // Select the text up to the target
-            self.move_to_position(target_pos, true);
-
-            // Cut the selection to the cut buffer
-            self.cut_selection_to_cut_buffer();
-
-            // Reset selection
-            self.reset_selection();
-        } else {
-            // If target not found, restore cursor
             self.move_to_position(start_pos, false);
         }
     }

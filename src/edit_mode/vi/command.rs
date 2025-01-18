@@ -242,10 +242,9 @@ impl Command {
                     left_char: *c,
                     right_char,
                 })]
-            }
-            Self::YankInside(_) => {
-                vec![]
-            }
+            } // Self::YankInside(_) => {
+              //     vec![]
+              // }
         }
     }
 
