@@ -18,44 +18,34 @@ pub enum Signal {
 ///
 /// Executed by `Reedline::run_edit_commands()`
 /// The core editing commands recognized by the `Editor`.
-#[derive(Clone, Debug, EnumIter)]
-pub enum EditCommand {
-    /// Insert the given character at the cursor (inserting, not replacing).
-    InsertChar(char),
-    /// Insert the given string at the cursor.
-    InsertString(String),
-    /// Insert a newline (accounting for CRLF vs LF if desired).
-    InsertNewline,
+// use strum_macros::EnumIter;
 
-    /// Replace one character under the cursor by `chr` (delete+insert).
+// Add partialeq, eq if you need to store or compare these.
+#[derive(Clone, Debug, EnumIter, PartialEq, Eq, Serialize)]
+pub enum EditCommand {
+    InsertChar(char),
+    InsertString(String),
+    InsertNewline,
     ReplaceChar(char),
-    /// Replace `n_chars` characters under the cursor with the given string.
     ReplaceChars(usize, String),
 
-    /// A parametric command that uses a `MotionKind` to compute a range
-    /// and then an action to apply (move cursor, cut, copy, delete, select).
     Motion {
         motion: MotionKind,
         action: MotionAction,
     },
 
-    /// Delete one grapheme to the left (like Backspace).
     Backspace,
-    /// Delete one grapheme to the right.
     Delete,
 
-    /// Operate inside pair of matching delimiters, e.g. "di(" or "ya{"
     OperateInsidePair {
         left_char: char,
         right_char: char,
         action: PairAction,
     },
 
-    /// Undo or redo
     Undo,
     Redo,
 
-    /// Word-level transformations or advanced manipulations
     SwapGraphemes,
     SwapWords,
     UppercaseWord,
@@ -63,15 +53,75 @@ pub enum EditCommand {
     SwitchcaseChar,
     CapitalizeChar,
 
-    /// Specialized commands
+    // Make sure to handle these in run_edit_command:
     SelectAll,
-    Clear,              // clear entire line buffer
-    ClearToLineEnd,
     CutSelection,
     CopySelection,
     PasteCutBuffer,
-    PasteCutBufferBefore,
-    PasteCutBufferAfter,
+
+    // System-clipboard variants, if you want them:
+    #[cfg(feature = "system_clipboard")]
+    CutSelectionSystem,
+    #[cfg(feature = "system_clipboard")]
+    CopySelectionSystem,
+    #[cfg(feature = "system_clipboard")]
+    PasteSystem,
+}
+
+// Make these partial eq / eq if you need them:
+#[derive(Copy, Clone, EnumIter, Debug, PartialEq, Eq)]
+pub enum MotionKind {
+    MoveLeft,
+    MoveRight,
+    MoveWordLeft,
+    MoveWordRight,
+    MoveBigWordLeft,
+    MoveBigWordRight,
+    MoveToLineStart,
+    MoveToLineEnd,
+    MoveToStart,
+    MoveToEnd,
+    MoveWordRightEnd,
+    MoveBigWordRightEnd,
+    MoveLineUp,
+    MoveLineDown,
+    MoveUntilChar {
+        c: char,
+        inclusive: bool,
+        forward: bool,
+    },
+}
+
+impl Default for MotionKind {
+    fn default() -> Self {
+        Self::MoveLeft
+    }
+}
+
+#[derive(Copy, Clone, EnumIter, Debug, PartialEq, Eq)]
+pub enum MotionAction {
+    MoveCursor { select: bool },
+    Copy,
+    Cut,
+    Delete,
+}
+
+impl Default for MotionAction {
+    fn default() -> Self {
+        Self::MoveCursor { select: false }
+    }
+}
+
+#[derive(Copy, Clone, EnumIter, Debug, PartialEq, Eq)]
+pub enum PairAction {
+    CutInside,
+    YankInside,
+}
+
+impl Default for PairAction {
+    fn default() -> Self {
+        Self::CutInside
+    }
 }
 
 impl Display for EditCommand {
@@ -96,13 +146,12 @@ impl Display for EditCommand {
             EditCommand::SwitchcaseChar => write!(f, "SwitchcaseChar"),
             EditCommand::CapitalizeChar => write!(f, "CapitalizeChar"),
             EditCommand::SelectAll => write!(f, "SelectAll"),
-            EditCommand::Clear => write!(f, "Clear"),
-            EditCommand::ClearToLineEnd => write!(f, "ClearToLineEnd"),
             EditCommand::CutSelection => write!(f, "CutSelection"),
             EditCommand::CopySelection => write!(f, "CopySelection"),
             EditCommand::PasteCutBuffer => write!(f, "PasteCutBuffer"),
-            EditCommand::PasteCutBufferBefore => write!(f, "PasteCutBufferBefore"),
-            EditCommand::PasteCutBufferAfter => write!(f, "PasteCutBufferAfter"),
+            // EditCommand::CutSelectionSystem => write!(f, "CutSelectionSystem"),
+            // EditCommand::CopySelectionSystem => write!(f, "CopySelectionSystem"),
+            // EditCommand::PasteSystem => write!(f, "PasteSystem"),
             EditCommand::Motion { motion, action } => {
                 write!(f, "Motion Value: {:?} {:?}", motion, action)
             }
@@ -123,12 +172,10 @@ impl EditCommand {
             | EditCommand::InsertNewline
             | EditCommand::ReplaceChar(_)
             | EditCommand::ReplaceChars(_, _)
-            | EditCommand::Clear
-            | EditCommand::ClearToLineEnd
             | EditCommand::CutSelection
             | EditCommand::PasteCutBuffer
-            | EditCommand::PasteCutBufferBefore
-            | EditCommand::PasteCutBufferAfter
+            // | EditCommand::CutSelectionSystem
+            // | EditCommand::PasteSystem
             | EditCommand::OperateInsidePair { .. }
             | EditCommand::SwapGraphemes
             | EditCommand::SwapWords
@@ -148,52 +195,10 @@ impl EditCommand {
 
             EditCommand::Undo | EditCommand::Redo => EditType::UndoRedo,
 
+            // EditCommand::CopySelection | EditCommand::CopySelectionSystem => EditType::NoOp,
             EditCommand::CopySelection => EditType::NoOp,
         }
     }
-}
-
-/// How we compute the "target index" or "destination" from the current cursor.
-#[derive(Copy, Clone, Debug)]
-pub enum MotionKind {
-    MoveLeft,
-    MoveRight,
-    MoveWordLeft,
-    MoveWordRight,
-    MoveBigWordLeft,
-    MoveBigWordRight,
-    MoveToLineStart,
-    MoveToLineEnd,
-    MoveToStart,
-    MoveToEnd,
-    MoveWordRightEnd,
-    MoveBigWordRightEnd,
-    // Char-based search
-    MoveUntilChar {
-        c: char,
-        inclusive: bool,  // do we include that char in the motion?
-        forward: bool,    // left vs. right
-    },
-}
-
-/// What action to perform with the computed range
-#[derive(Copy, Clone, Debug)]
-pub enum MotionAction {
-    /// Just move the cursor, optionally enabling selection if `select==true`.
-    MoveCursor { select: bool },
-    /// Copy that range into the cut/clipboard buffer (does not remove).
-    Copy,
-    /// Cut that range (copy + remove from line buffer).
-    Cut,
-    /// Delete that range (remove from line buffer but do not copy).
-    Delete,
-}
-
-/// For inside-pair operations:
-#[derive(Copy, Clone, Debug)]
-pub enum PairAction {
-    CutInside,
-    YankInside,
 }
 
 /// Specifies the types of edit commands, used to simplify grouping edits

@@ -1,7 +1,7 @@
 use super::{edit_stack::EditStack, Clipboard, ClipboardMode, LineBuffer};
 #[cfg(feature = "system_clipboard")]
 use crate::core_editor::get_system_clipboard;
-use crate::enums::{EditType, UndoBehavior, MotionKind, MotionAction};
+use crate::enums::{EditType, UndoBehavior, MotionKind, MotionAction, PairAction};
 use crate::{core_editor::get_local_clipboard, EditCommand};
 use std::ops::DerefMut;
 
@@ -24,6 +24,7 @@ impl Default for Editor {
         Editor {
             line_buffer: LineBuffer::new(),
             cut_buffer: get_local_clipboard(),
+
             #[cfg(feature = "system_clipboard")]
             system_clipboard: get_system_clipboard(),
             edit_stack: EditStack::new(),
@@ -57,7 +58,7 @@ impl Editor {
             EditCommand::ReplaceChar(chr) => self.replace_char(*chr),
             EditCommand::ReplaceChars(n, s) => self.replace_chars(*n, s),
 
-            // Our big new parametric command
+            // Motion-based commands
             EditCommand::Motion { motion, action } => {
                 self.handle_motion(*motion, *action);
             }
@@ -86,148 +87,29 @@ impl Editor {
             EditCommand::SwitchcaseChar => self.line_buffer.switchcase_char(),
             EditCommand::CapitalizeChar => self.line_buffer.capitalize_char(),
 
-            // Others
-            EditCommand::SelectAll => self.select_all(),
-            EditCommand::Clear => self.line_buffer.clear(),
-            EditCommand::ClearToLineEnd => self.line_buffer.clear_to_line_end(),
+            // Clipboard operations
             EditCommand::CutSelection => self.cut_selection_to_cut_buffer(),
             EditCommand::CopySelection => self.copy_selection_to_cut_buffer(),
             EditCommand::PasteCutBuffer => self.paste_cut_buffer(),
-            EditCommand::MoveToStart { select } => self.move_to_start(*select),
-            EditCommand::MoveToLineStart { select } => self.move_to_line_start(*select),
-            EditCommand::MoveToEnd { select } => self.move_to_end(*select),
-            EditCommand::MoveToLineEnd { select } => self.move_to_line_end(*select),
-            EditCommand::MoveToPosition { position, select } => {
-                self.move_to_position(*position, *select)
-            }
-            EditCommand::MoveLeft { select } => self.move_left(*select),
-            EditCommand::MoveRight { select } => self.move_right(*select),
-            EditCommand::MoveWordLeft { select } => self.move_word_left(*select),
-            EditCommand::MoveBigWordLeft { select } => self.move_big_word_left(*select),
-            EditCommand::MoveWordRight { select } => self.move_word_right(*select),
-            EditCommand::MoveWordRightStart { select } => self.move_word_right_start(*select),
-            EditCommand::MoveBigWordRightStart { select } => {
-                self.move_big_word_right_start(*select)
-            }
-            EditCommand::MoveWordRightEnd { select } => self.move_word_right_end(*select),
-            EditCommand::MoveBigWordRightEnd { select } => self.move_big_word_right_end(*select),
-            EditCommand::InsertChar(c) => self.insert_char(*c),
-            EditCommand::Complete => {}
-            EditCommand::InsertString(str) => self.insert_str(str),
-            EditCommand::InsertNewline => self.insert_newline(),
-            EditCommand::ReplaceChar(chr) => self.replace_char(*chr),
-            EditCommand::ReplaceChars(n_chars, str) => self.replace_chars(*n_chars, str),
-            EditCommand::Backspace => self.backspace(),
-            EditCommand::Delete => self.delete(),
-            EditCommand::CutChar => self.cut_char(),
-            EditCommand::BackspaceWord => self.line_buffer.delete_word_left(),
-            EditCommand::DeleteWord => self.line_buffer.delete_word_right(),
-            EditCommand::Clear => self.line_buffer.clear(),
-            EditCommand::ClearToLineEnd => self.line_buffer.clear_to_line_end(),
-            EditCommand::CutCurrentLine => self.cut_current_line(),
-            EditCommand::CutFromStart => self.cut_from_start(),
-            EditCommand::CutFromLineStart => self.cut_from_line_start(),
-            EditCommand::CutToEnd => self.cut_from_end(),
-            EditCommand::CutToLineEnd => self.cut_to_line_end(),
-            EditCommand::CutWordLeft => self.cut_word_left(),
-            EditCommand::CutBigWordLeft => self.cut_big_word_left(),
-            EditCommand::CutWordRight => self.cut_word_right(),
-            EditCommand::CutBigWordRight => self.cut_big_word_right(),
-            EditCommand::CutWordRightToNext => self.cut_word_right_to_next(),
-            EditCommand::CutBigWordRightToNext => self.cut_big_word_right_to_next(),
-            EditCommand::PasteCutBufferBefore => self.insert_cut_buffer_before(),
-            EditCommand::PasteCutBufferAfter => self.insert_cut_buffer_after(),
-            EditCommand::UppercaseWord => self.line_buffer.uppercase_word(),
-            EditCommand::LowercaseWord => self.line_buffer.lowercase_word(),
-            EditCommand::SwitchcaseChar => self.line_buffer.switchcase_char(),
-            EditCommand::CapitalizeChar => self.line_buffer.capitalize_char(),
-            EditCommand::SwapWords => self.line_buffer.swap_words(),
-            EditCommand::SwapGraphemes => self.line_buffer.swap_graphemes(),
-            EditCommand::Undo => self.undo(),
-            EditCommand::Redo => self.redo(),
-            EditCommand::CutRightUntil(c) => self.cut_right_until_char(*c, false, true),
-            EditCommand::CutRightBefore(c) => self.cut_right_until_char(*c, true, true),
-            EditCommand::MoveRightUntil { c, select } => {
-                self.move_right_until_char(*c, false, true, *select)
-            }
-            EditCommand::MoveRightBefore { c, select } => {
-                self.move_right_until_char(*c, true, true, *select)
-            }
-            EditCommand::CutLeftUntil(c) => self.cut_left_until_char(*c, false, true),
-            EditCommand::CutLeftBefore(c) => self.cut_left_until_char(*c, true, true),
-            EditCommand::MoveLeftUntil { c, select } => {
-                self.move_left_until_char(*c, false, true, *select)
-            }
-            EditCommand::MoveLeftBefore { c, select } => {
-                self.move_left_until_char(*c, true, true, *select)
-            }
+
+            // Add missing arm:
             EditCommand::SelectAll => self.select_all(),
-            EditCommand::CutSelection => self.cut_selection_to_cut_buffer(),
-            EditCommand::CopySelection => self.copy_selection_to_cut_buffer(),
-            EditCommand::Paste => self.paste_cut_buffer(),
-            EditCommand::CopyFromStart => self.copy_from_start(),
-            EditCommand::CopyFromLineStart => self.copy_from_line_start(),
-            EditCommand::CopyToEnd => self.copy_from_end(),
-            EditCommand::CopyToLineEnd => self.copy_to_line_end(),
-            EditCommand::CopyWordLeft => self.copy_word_left(),
-            EditCommand::CopyBigWordLeft => self.copy_big_word_left(),
-            EditCommand::CopyWordRight => self.copy_word_right(),
-            EditCommand::CopyBigWordRight => self.copy_big_word_right(),
-            EditCommand::CopyWordRightToNext => self.copy_word_right_to_next(),
-            EditCommand::CopyBigWordRightToNext => self.copy_big_word_right_to_next(),
-            EditCommand::CopyRightUntil(c) => self.copy_right_until_char(*c, false, true),
-            EditCommand::CopyRightBefore(c) => self.copy_right_until_char(*c, true, true),
-            EditCommand::CopyLeftUntil(c) => self.copy_left_until_char(*c, false, true),
-            EditCommand::CopyLeftBefore(c) => self.copy_left_until_char(*c, true, true),
-            EditCommand::CopyCurrentLine => {
-                let range = self.line_buffer.current_line_range();
-                let copy_slice = &self.line_buffer.get_buffer()[range];
-                if !copy_slice.is_empty() {
-                    self.cut_buffer.set(copy_slice, ClipboardMode::Lines);
-                }
-            }
-            EditCommand::CopyLeft => {
-                let insertion_offset = self.line_buffer.insertion_point();
-                if insertion_offset > 0 {
-                    let left_index = self.line_buffer.grapheme_left_index();
-                    let copy_range = left_index..insertion_offset;
-                    self.cut_buffer.set(
-                        &self.line_buffer.get_buffer()[copy_range],
-                        ClipboardMode::Normal,
-                    );
-                }
-            }
-            EditCommand::CopyRight => {
-                let insertion_offset = self.line_buffer.insertion_point();
-                let right_index = self.line_buffer.grapheme_right_index();
-                if right_index > insertion_offset {
-                    let copy_range = insertion_offset..right_index;
-                    self.cut_buffer.set(
-                        &self.line_buffer.get_buffer()[copy_range],
-                        ClipboardMode::Normal,
-                    );
-                }
-            }
+
+            // If you have system clipboard arms:
             #[cfg(feature = "system_clipboard")]
             EditCommand::CutSelectionSystem => self.cut_selection_to_system(),
             #[cfg(feature = "system_clipboard")]
             EditCommand::CopySelectionSystem => self.copy_selection_to_system(),
             #[cfg(feature = "system_clipboard")]
             EditCommand::PasteSystem => self.paste_from_system(),
-            EditCommand::CutInside {
-                left_char,
-                right_char,
-            } => self.cut_inside(*left_char, *right_char),
-            EditCommand::YankInside {
-                left_char,
-                right_char,
-            } => self.yank_inside(*left_char, *right_char),
         }
+
+        // Update selection anchor based on command type
         if !matches!(command.edit_type(), EditType::MoveCursor { select: true }) {
             self.selection_anchor = None;
         }
-        if let EditType::MoveCursor { select: true } = command.edit_type() {}
 
+        // Update undo state
         let new_undo_behavior = match (command, command.edit_type()) {
             (_, EditType::MoveCursor { .. }) => UndoBehavior::MoveCursor,
             (EditCommand::InsertChar(c), EditType::EditText) => UndoBehavior::InsertCharacter(*c),
@@ -260,11 +142,14 @@ impl Editor {
         // Apply the action
         match action {
             MotionAction::MoveCursor { select } => {
+                // If we want to maintain selection, set the anchor if not already set:
                 if select {
-                    self.line_buffer.set_selection_range(start_idx, end_idx);
+                    // If there's no anchor yet, set anchor to the old cursor
+                    self.selection_anchor = self.selection_anchor.or(Some(start_idx));
                 } else {
-                    self.line_buffer.reset_selection();
+                    self.selection_anchor = None;
                 }
+                // Move insertion point
                 self.line_buffer.set_insertion_point(end_idx);
             }
             MotionAction::Copy => {
@@ -298,16 +183,74 @@ impl Editor {
             MotionKind::MoveToEnd => self.line_buffer.get_buffer().len(),
             MotionKind::MoveWordRightEnd => self.line_buffer.word_right_end_index(),
             MotionKind::MoveBigWordRightEnd => self.line_buffer.big_word_right_end_index(),
+            MotionKind::MoveLineUp => {
+                let current_pos = self.line_buffer.insertion_point();
+                let start_of_line = self.line_buffer.find_current_line_start();
+                let relative_pos = current_pos - start_of_line;
+                
+                // Find start of previous line
+                if start_of_line > 0 {
+                    let prev_line_start = self.line_buffer.find_line_start_before(start_of_line);
+                    let prev_line_end = start_of_line;
+                    let prev_line_len = prev_line_end - prev_line_start;
+                    
+                    // Keep same relative position if possible
+                    prev_line_start + relative_pos.min(prev_line_len)
+                } else {
+                    current_pos // Already at first line
+                }
+            }
+            MotionKind::MoveLineDown => {
+                let current_pos = self.line_buffer.insertion_point();
+                let start_of_line = self.line_buffer.find_current_line_start();
+                let relative_pos = current_pos - start_of_line;
+                
+                let end_of_line = self.line_buffer.find_current_line_end();
+                if end_of_line < self.line_buffer.get_buffer().len() {
+                    let next_line_start = end_of_line + 1; // Skip newline
+                    let next_line_end = self.line_buffer.find_line_end_after(next_line_start);
+                    let next_line_len = next_line_end - next_line_start;
+                    
+                    // Keep same relative position if possible
+                    next_line_start + relative_pos.min(next_line_len)
+                } else {
+                    current_pos // Already at last line
+                }
+            }
             MotionKind::MoveUntilChar { c, inclusive, forward } => {
                 if forward {
-                    let offset = self.line_buffer.find_next_char(c, inclusive);
-                    offset.unwrap_or_else(|| self.line_buffer.get_buffer().len())
+                    // Instead of find_next_char, use find_char_right
+                    if let Some(index) = self.line_buffer.find_char_right(c, /* e.g. false for entire line? */ false) {
+                        // If inclusive is false => we want to move up until just before char?
+                        let delta = if inclusive { c.len_utf8() } else { 0 };
+                        (index + delta).min(self.line_buffer.get_buffer().len())
+                    } else {
+                        self.line_buffer.get_buffer().len()
+                    }
                 } else {
-                    let offset = self.line_buffer.find_previous_char(c, inclusive);
-                    offset.unwrap_or(0)
+                    // Instead of find_previous_char, use find_char_left
+                    if let Some(index) = self.line_buffer.find_char_left(c, /* e.g. false? */ false) {
+                        // If inclusive, move behind that char
+                        let offset = if inclusive {
+                            index
+                        } else {
+                            index + c.len_utf8()
+                        };
+                        offset.max(0)
+                    } else {
+                        0
+                    }
                 }
             }
         }
+    }
+
+    pub(crate) fn move_line_up(&mut self) {
+        self.handle_motion(MotionKind::MoveLineUp, MotionAction::MoveCursor { select: false });
+    }
+
+    pub(crate) fn move_line_down(&mut self) {
+        self.handle_motion(MotionKind::MoveLineDown, MotionAction::MoveCursor { select: false });
     }
 
     fn move_cursor_to(&mut self, new_offset: usize, select: bool) {
@@ -352,16 +295,6 @@ impl Editor {
     fn move_to_position(&mut self, position: usize, select: bool) {
         self.update_selection_anchor(select);
         self.line_buffer.set_insertion_point(position)
-    }
-
-    pub(crate) fn move_line_up(&mut self) {
-        self.line_buffer.move_line_up();
-        self.update_undo_state(UndoBehavior::MoveCursor);
-    }
-
-    pub(crate) fn move_line_down(&mut self) {
-        self.line_buffer.move_line_down();
-        self.update_undo_state(UndoBehavior::MoveCursor);
     }
 
     /// Get the text of the current [`LineBuffer`]
@@ -665,16 +598,6 @@ impl Editor {
         self.line_buffer.insert_str(string);
     }
 
-    fn move_left(&mut self, select: bool) {
-        self.update_selection_anchor(select);
-        self.line_buffer.move_left();
-    }
-
-    fn move_right(&mut self, select: bool) {
-        self.update_selection_anchor(select);
-        self.line_buffer.move_right();
-    }
-
     fn select_all(&mut self) {
         self.selection_anchor = Some(0);
         self.line_buffer.move_to_end();
@@ -758,32 +681,12 @@ impl Editor {
         }
     }
 
-    fn move_word_left(&mut self, select: bool) {
-        self.move_to_position(self.line_buffer.word_left_index(), select);
-    }
-
-    fn move_big_word_left(&mut self, select: bool) {
-        self.move_to_position(self.line_buffer.big_word_left_index(), select);
-    }
-
-    fn move_word_right(&mut self, select: bool) {
-        self.move_to_position(self.line_buffer.word_right_index(), select);
-    }
-
     fn move_word_right_start(&mut self, select: bool) {
         self.move_to_position(self.line_buffer.word_right_start_index(), select);
     }
 
     fn move_big_word_right_start(&mut self, select: bool) {
         self.move_to_position(self.line_buffer.big_word_right_start_index(), select);
-    }
-
-    fn move_word_right_end(&mut self, select: bool) {
-        self.move_to_position(self.line_buffer.word_right_end_index(), select);
-    }
-
-    fn move_big_word_right_end(&mut self, select: bool) {
-        self.move_to_position(self.line_buffer.big_word_right_end_index(), select);
     }
 
     fn insert_char(&mut self, c: char) {

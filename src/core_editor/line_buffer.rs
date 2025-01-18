@@ -889,6 +889,35 @@ impl LineBuffer {
         }
         None
     }
+
+    /// Find the start of the line before the given position
+    pub(crate) fn find_line_start_before(&self, pos: usize) -> usize {
+        let mut current = pos;
+        while current > 0 {
+            current -= 1;
+            if self.lines[current..].starts_with('\n') {
+                return current + 1;
+            }
+        }
+        0
+    }
+
+    /// Find the end of the line after the given position
+    pub(crate) fn find_line_end_after(&self, pos: usize) -> usize {
+        let mut current = pos;
+        while current < self.lines.len() {
+            if self.lines[current..].starts_with('\n') {
+                return current;
+            }
+            current += 1;
+        }
+        self.lines.len()
+    }
+
+    /// Find the start of the current line
+    pub(crate) fn find_current_line_start(&self) -> usize {
+        self.find_line_start_before(self.insertion_point)
+    }
 }
 
 /// Match any sequence of characters that are considered a word boundary
