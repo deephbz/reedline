@@ -157,7 +157,7 @@ pub enum Command {
     Switchcase,
     RepeatLastAction,
     Yank,
-    // the char carried by Change/Delete/YankInside commands is the user-pressed key
+    // These DoSthInsideBrackets commands are agnostic to whether user pressed the left char or right char
     ChangeInsideBrackets { left: char, right: char },
     DeleteInsideBrackets { left: char, right: char },
     YankInsideBrackets { left: char, right: char },
@@ -202,7 +202,9 @@ impl Command {
                     vec![ReedlineOption::Edit(EditCommand::CutChar)]
                 }
             }
-            Self::ReplaceChar(c) => vec![ReedlineOption::Edit(EditCommand::ReplaceChar(*c))],
+            Self::ReplaceChar(c) => {
+                vec![ReedlineOption::Edit(EditCommand::ReplaceChar(*c))]
+            }
             Self::SubstituteCharWithInsert => {
                 if vi_state.mode == ViMode::Visual {
                     vec![ReedlineOption::Edit(EditCommand::CutSelection)]
@@ -220,7 +222,6 @@ impl Command {
                 Some(event) => vec![ReedlineOption::Event(event.clone())],
                 None => vec![],
             },
-            // New bracket pair handlers
             Self::ChangeInsideBrackets { left, right } => vec![
                 ReedlineOption::Edit(EditCommand::CutLeftBefore(*left)),
                 ReedlineOption::Edit(EditCommand::CutRightBefore(*right)),
