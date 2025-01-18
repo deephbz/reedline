@@ -33,6 +33,23 @@ impl Default for Editor {
     }
 }
 
+/// Common actions we can do once we've found a position in the buffer
+enum SearchMoveAction {
+    /// Just move the cursor (potentially also handle selection)
+    MoveCursor(bool), // bool = select?
+    /// Copy that substring into the cut buffer but keep it
+    CopyToClipboard,
+    /// Cut (copy + remove from buffer)
+    CutToClipboard,
+}
+
+/// A small helper indicating which direction we are searching in
+#[derive(PartialEq)]
+enum Direction {
+    Left,
+    Right,
+}
+
 impl Editor {
     /// Get the current [`LineBuffer`]
     pub const fn line_buffer(&self) -> &LineBuffer {
@@ -100,21 +117,117 @@ impl Editor {
             EditCommand::SwapGraphemes => self.line_buffer.swap_graphemes(),
             EditCommand::Undo => self.undo(),
             EditCommand::Redo => self.redo(),
-            EditCommand::CutRightUntil(c) => self.cut_right_until_char(*c, false, true),
-            EditCommand::CutRightBefore(c) => self.cut_right_until_char(*c, true, true),
+            EditCommand::CutRightUntil(c) => {
+                self.apply_search_move_action(
+                    *c,
+                    false, /*before_char*/
+                    true,  /*current_line*/
+                    Direction::Right,
+                    SearchMoveAction::CutToClipboard,
+                );
+            }
+            EditCommand::CutRightBefore(c) => {
+                self.apply_search_move_action(
+                    *c,
+                    true,
+                    true,
+                    Direction::Right,
+                    SearchMoveAction::CutToClipboard,
+                );
+            }
+
+            EditCommand::CopyRightUntil(c) => {
+                self.apply_search_move_action(
+                    *c,
+                    false,
+                    true,
+                    Direction::Right,
+                    SearchMoveAction::CopyToClipboard,
+                );
+            }
+            EditCommand::CopyRightBefore(c) => {
+                self.apply_search_move_action(
+                    *c,
+                    true,
+                    true,
+                    Direction::Right,
+                    SearchMoveAction::CopyToClipboard,
+                );
+            }
+
             EditCommand::MoveRightUntil { c, select } => {
-                self.move_right_until_char(*c, false, true, *select)
+                self.apply_search_move_action(
+                    *c,
+                    false,
+                    true,
+                    Direction::Right,
+                    SearchMoveAction::MoveCursor(*select),
+                );
             }
             EditCommand::MoveRightBefore { c, select } => {
-                self.move_right_until_char(*c, true, true, *select)
+                self.apply_search_move_action(
+                    *c,
+                    true,
+                    true,
+                    Direction::Right,
+                    SearchMoveAction::MoveCursor(*select),
+                );
             }
-            EditCommand::CutLeftUntil(c) => self.cut_left_until_char(*c, false, true),
-            EditCommand::CutLeftBefore(c) => self.cut_left_until_char(*c, true, true),
+
+            // Same for Left
+            EditCommand::CutLeftUntil(c) => {
+                self.apply_search_move_action(
+                    *c,
+                    false,
+                    true,
+                    Direction::Left,
+                    SearchMoveAction::CutToClipboard,
+                );
+            }
+            EditCommand::CutLeftBefore(c) => {
+                self.apply_search_move_action(
+                    *c,
+                    true,
+                    true,
+                    Direction::Left,
+                    SearchMoveAction::CutToClipboard,
+                );
+            }
+            EditCommand::CopyLeftUntil(c) => {
+                self.apply_search_move_action(
+                    *c,
+                    false,
+                    true,
+                    Direction::Left,
+                    SearchMoveAction::CopyToClipboard,
+                );
+            }
+            EditCommand::CopyLeftBefore(c) => {
+                self.apply_search_move_action(
+                    *c,
+                    true,
+                    true,
+                    Direction::Left,
+                    SearchMoveAction::CopyToClipboard,
+                );
+            }
             EditCommand::MoveLeftUntil { c, select } => {
-                self.move_left_until_char(*c, false, true, *select)
+                self.apply_search_move_action(
+                    *c,
+                    false,
+                    true,
+                    Direction::Left,
+                    SearchMoveAction::MoveCursor(*select),
+                );
             }
             EditCommand::MoveLeftBefore { c, select } => {
-                self.move_left_until_char(*c, true, true, *select)
+                self.apply_search_move_action(
+                    *c,
+                    true,
+                    true,
+                    Direction::Left,
+                    SearchMoveAction::MoveCursor(*select),
+                );
             }
             EditCommand::SelectAll => self.select_all(),
             EditCommand::CutSelection => self.cut_selection_to_cut_buffer(),
@@ -130,10 +243,6 @@ impl Editor {
             EditCommand::CopyBigWordRight => self.copy_big_word_right(),
             EditCommand::CopyWordRightToNext => self.copy_word_right_to_next(),
             EditCommand::CopyBigWordRightToNext => self.copy_big_word_right_to_next(),
-            EditCommand::CopyRightUntil(c) => self.copy_right_until_char(*c, false, true),
-            EditCommand::CopyRightBefore(c) => self.copy_right_until_char(*c, true, true),
-            EditCommand::CopyLeftUntil(c) => self.copy_left_until_char(*c, false, true),
-            EditCommand::CopyLeftBefore(c) => self.copy_left_until_char(*c, true, true),
             EditCommand::CopyCurrentLine => {
                 let range = self.line_buffer.current_line_range();
                 let copy_slice = &self.line_buffer.get_buffer()[range];
@@ -200,6 +309,7 @@ impl Editor {
 
         self.update_undo_state(new_undo_behavior);
     }
+
     fn update_selection_anchor(&mut self, select: bool) {
         self.selection_anchor = if select {
             self.selection_anchor
@@ -899,6 +1009,93 @@ impl Editor {
 
         // Always restore the cursor position
         self.line_buffer.set_insertion_point(old_pos);
+    }
+
+    /// Unifies the repeated "right until/before" and "left until/before" logic
+    /// and applies one of {MoveCursor, CopyToClipboard, CutToClipboard}.
+    fn apply_search_move_action(
+        &mut self,
+        c: char,
+        before_char: bool,
+        current_line: bool,
+        direction: Direction,
+        action: SearchMoveAction,
+    ) {
+        // 1) Possibly update the selection anchor if moving
+        let select = matches!(action, SearchMoveAction::MoveCursor(true));
+        self.update_selection_anchor(select);
+
+        // 2) Find the offset of `c` to the left or right
+        let found_offset_opt = match direction {
+            Direction::Right => self.line_buffer.find_char_right(c, current_line),
+            Direction::Left => self.line_buffer.find_char_left(c, current_line),
+        };
+
+        // If we didn't find it, do nothing
+        let found_offset = match found_offset_opt {
+            Some(pos) => pos,
+            None => return,
+        };
+
+        // 3) Depending on "before_char" we adjust that offset
+        //    e.g. "move right *before* c" => offset does NOT include c
+        //         "move right *until* c"  => offset includes c
+        let final_offset = if before_char {
+            if direction == Direction::Right {
+                found_offset // don't include the char itself
+            } else {
+                found_offset + c.len_utf8()
+            }
+        } else {
+            if direction == Direction::Right {
+                found_offset + c.len_utf8()
+            } else {
+                found_offset
+            }
+        };
+
+        match action {
+            // 4) Move the cursor
+            SearchMoveAction::MoveCursor(_) => {
+                self.line_buffer.set_insertion_point(final_offset);
+            }
+
+            // 4) Copy or Cut
+            SearchMoveAction::CopyToClipboard | SearchMoveAction::CutToClipboard => {
+                // The "slice" depends on direction:
+                //    right => (insertion_point .. final_offset)
+                //    left  => (final_offset .. insertion_point)
+                if direction == Direction::Right {
+                    let start = self.line_buffer.insertion_point();
+                    let end = final_offset;
+                    if end > start {
+                        let slice = &self.line_buffer.get_buffer()[start..end];
+                        if !slice.is_empty() {
+                            self.cut_buffer.set(slice, ClipboardMode::Normal);
+                            // For "CutToClipboard" also remove from buffer
+                            if let SearchMoveAction::CutToClipboard = action {
+                                self.line_buffer.clear_range_safe(start, end);
+                            }
+                        }
+                    }
+                } else {
+                    // direction == Left
+                    let start = final_offset;
+                    let end = self.line_buffer.insertion_point();
+                    if end > start {
+                        let slice = &self.line_buffer.get_buffer()[start..end];
+                        if !slice.is_empty() {
+                            self.cut_buffer.set(slice, ClipboardMode::Normal);
+                            if let SearchMoveAction::CutToClipboard = action {
+                                self.line_buffer.clear_range_safe(start, end);
+                                // Move cursor to start
+                                self.line_buffer.set_insertion_point(start);
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
