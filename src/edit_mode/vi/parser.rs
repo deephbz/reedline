@@ -1,6 +1,4 @@
-use super::command::{
-    is_valid_change_inside_left, is_valid_change_inside_right, parse_command, Command,
-};
+use super::command::{parse_command, Command};
 use super::motion::{parse_motion, Motion};
 use crate::{edit_mode::vi::ViMode, EditCommand, ReedlineEvent, Vi};
 use std::iter::Peekable;
@@ -115,11 +113,7 @@ impl ParsedViSequence {
             (Some(Command::Delete), ParseResult::Incomplete) if mode == ViMode::Visual => {
                 Some(ViMode::Normal)
             }
-            (Some(Command::ChangeInside(char)), ParseResult::Valid(_))
-                if is_valid_change_inside_left(char) || is_valid_change_inside_right(char) =>
-            {
-                Some(ViMode::Insert)
-            }
+            (Some(Command::ChangeInsideBrackets { .. }), _) => Some(ViMode::Insert),
             (Some(Command::Delete), ParseResult::Incomplete)
             | (Some(Command::DeleteChar), ParseResult::Incomplete)
             | (Some(Command::DeleteToEnd), ParseResult::Incomplete)
@@ -128,8 +122,8 @@ impl ParsedViSequence {
             | (Some(Command::DeleteToEnd), ParseResult::Valid(_))
             | (Some(Command::Yank), ParseResult::Valid(_))
             | (Some(Command::Yank), ParseResult::Incomplete)
-            | (Some(Command::YankInside(_)), ParseResult::Valid(_))
-            | (Some(Command::YankInside(_)), ParseResult::Incomplete) => Some(ViMode::Normal),
+            | (Some(Command::DeleteInsideBrackets { .. }), _)
+            | (Some(Command::YankInsideBrackets { .. }), _) => Some(ViMode::Normal),
             _ => None,
         }
     }
