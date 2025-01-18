@@ -854,23 +854,31 @@ impl Editor {
         let start_pos = self.insertion_point();
 
         // Find matching pairs
-        if let (Some(left_pos), Some(right_pos)) = (
-            self.line_buffer.find_char_left(left_char, true),
-            self.line_buffer.find_char_right(right_char, true),
-        ) {
-            // Select the text between the characters
-            self.move_to_position(left_pos + 1, false);
-            self.move_to_position(right_pos, true);
+        if let Some(left_pos) = self.line_buffer.find_char_left(left_char, true) {
+            // Only search for right char after the left char position
+            self.line_buffer.set_insertion_point(left_pos + 1);
+            if let Some(right_pos) = self.line_buffer.find_char_right(right_char, true) {
+                // Select the text between the characters (excluding the boundaries)
+                self.move_to_position(left_pos + 1, false);
+                self.move_to_position(right_pos, true);
 
-            // Cut the selection to the cut buffer
-            self.cut_selection_to_cut_buffer();
+                // Get the selected text and update cut buffer
+                if let Some(selected_text) = self.get_selection() {
+                    self.cut_buffer = selected_text;
+                }
 
-            // Reset selection
-            self.reset_selection();
-        } else {
-            // If no matching pair found, restore cursor
-            self.move_to_position(start_pos, false);
+                // Delete the selected text
+                self.line_buffer.delete_selection();
+                
+                // Reset selection and position cursor between delimiters
+                self.reset_selection();
+                self.move_to_position(left_pos + 1, false);
+                return;
+            }
         }
+
+        // If no matching pair found or right char not found, restore cursor
+        self.move_to_position(start_pos, false);
     }
 
     /// Yank text between matching characters atomically
@@ -879,21 +887,28 @@ impl Editor {
         let start_pos = self.insertion_point();
 
         // Find matching pairs
-        if let (Some(left_pos), Some(right_pos)) = (
-            self.line_buffer.find_char_left(left_char, true),
-            self.line_buffer.find_char_right(right_char, true),
-        ) {
-            // Select the text between the characters
-            self.move_to_position(left_pos + 1, false);
-            self.move_to_position(right_pos, true);
+        if let Some(left_pos) = self.line_buffer.find_char_left(left_char, true) {
+            // Only search for right char after the left char position
+            self.line_buffer.set_insertion_point(left_pos + 1);
+            if let Some(right_pos) = self.line_buffer.find_char_right(right_char, true) {
+                // Select the text between the characters (excluding the boundaries)
+                self.move_to_position(left_pos + 1, false);
+                self.move_to_position(right_pos, true);
 
-            // Copy the selection to the cut buffer
-            self.copy_selection_to_cut_buffer();
+                // Get the selected text and update cut buffer
+                if let Some(selected_text) = self.get_selection() {
+                    self.cut_buffer = selected_text;
+                }
 
-            // Reset selection and restore cursor
-            self.reset_selection();
-            self.move_to_position(start_pos, false);
+                // Reset selection and restore cursor
+                self.reset_selection();
+                self.move_to_position(start_pos, false);
+                return;
+            }
         }
+
+        // If no matching pair found or right char not found, restore cursor
+        self.move_to_position(start_pos, false);
     }
 }
 
@@ -1144,5 +1159,124 @@ mod test {
             editor.run_edit_command(&EditCommand::PasteSystem);
             pretty_assertions::assert_eq!(editor.line_buffer.len(), s.len() * 2);
         }
+    }
+
+    #[test]
+    fn test_delete_inside_brackets() {
+        let mut editor = editor_with("foo(bar)baz");
+        editor.move_to_position(5, false); // Move inside brackets
+        editor.delete_inside('(', ')');
+        assert_eq!(editor.get_buffer(), "foo()baz");
+        assert_eq!(editor.insertion_point(), 4);
+
+        // Test with cursor outside brackets
+        let mut editor = editor_with("foo(bar)baz");
+        editor.move_to_position(0, false);
+        editor.delete_inside('(', ')');
+        assert_eq!(editor.get_buffer(), "foo()baz");
+        assert_eq!(editor.insertion_point(), 4);
+
+        // Test with no matching brackets
+        let mut editor = editor_with("foo bar baz");
+        editor.move_to_position(4, false);
+        editor.delete_inside('(', ')');
+        assert_eq!(editor.get_buffer(), "foo bar baz");
+        assert_eq!(editor.insertion_point(), 4);
+    }
+
+    #[test]
+    fn test_delete_inside_quotes() {
+        let mut editor = editor_with("foo\"bar\"baz");
+        editor.move_to_position(5, false); // Move inside quotes
+        editor.delete_inside('"', '"');
+        assert_eq!(editor.get_buffer(), "foo\"\"baz");
+        assert_eq!(editor.insertion_point(), 4);
+
+        // Test with cursor outside quotes
+        let mut editor = editor_with("foo\"bar\"baz");
+        editor.move_to_position(0, false);
+        editor.delete_inside('"', '"');
+        assert_eq!(editor.get_buffer(), "foo\"\"baz");
+        assert_eq!(editor.insertion_point(), 4);
+    }
+
+    #[test]
+    fn test_yank_inside_brackets() {
+        let mut editor = editor_with("foo(bar)baz");
+        editor.move_to_position(5, false); // Move inside brackets
+        editor.yank_inside('(', ')');
+        assert_eq!(editor.get_buffer(), "foo(bar)baz"); // Buffer shouldn't change
+        assert_eq!(editor.insertion_point(), 5); // Cursor should return to original position
+
+        // Test yanked content by pasting
+        editor.paste_cut_buffer();
+        assert_eq!(editor.get_buffer(), "foo(barbar)baz");
+
+        // Test with cursor outside brackets
+        let mut editor = editor_with("foo(bar)baz");
+        editor.move_to_position(0, false);
+        editor.yank_inside('(', ')');
+        assert_eq!(editor.get_buffer(), "foo(bar)baz");
+        assert_eq!(editor.insertion_point(), 0);
+
+        // Test yanked content by pasting
+        editor.paste_cut_buffer();
+        assert_eq!(editor.get_buffer(), "barfoo(bar)baz");
+    }
+
+    #[test]
+    fn test_yank_inside_quotes() {
+        let mut editor = editor_with("foo\"bar\"baz");
+        editor.move_to_position(5, false); // Move inside quotes
+        editor.yank_inside('"', '"');
+        assert_eq!(editor.get_buffer(), "foo\"bar\"baz"); // Buffer shouldn't change
+        assert_eq!(editor.insertion_point(), 5); // Cursor should return to original position
+
+        // Test yanked content by pasting
+        editor.paste_cut_buffer();
+        assert_eq!(editor.get_buffer(), "foo\"barbar\"baz");
+
+        // Test with no matching quotes
+        let mut editor = editor_with("foo bar baz");
+        editor.move_to_position(4, false);
+        editor.yank_inside('"', '"');
+        assert_eq!(editor.get_buffer(), "foo bar baz");
+        assert_eq!(editor.insertion_point(), 4);
+    }
+
+    #[test]
+    fn test_delete_inside_nested() {
+        let mut editor = editor_with("foo(bar(baz)qux)quux");
+        editor.move_to_position(8, false); // Move inside inner brackets
+        editor.delete_inside('(', ')');
+        assert_eq!(editor.get_buffer(), "foo(bar()qux)quux");
+        assert_eq!(editor.insertion_point(), 8);
+
+        editor.move_to_position(4, false); // Move inside outer brackets
+        editor.delete_inside('(', ')');
+        assert_eq!(editor.get_buffer(), "foo()quux");
+        assert_eq!(editor.insertion_point(), 4);
+    }
+
+    #[test]
+    fn test_yank_inside_nested() {
+        let mut editor = editor_with("foo(bar(baz)qux)quux");
+        editor.move_to_position(8, false); // Move inside inner brackets
+        editor.yank_inside('(', ')');
+        assert_eq!(editor.get_buffer(), "foo(bar(baz)qux)quux"); // Buffer shouldn't change
+        assert_eq!(editor.insertion_point(), 8);
+
+        // Test yanked content by pasting
+        editor.paste_cut_buffer();
+        assert_eq!(editor.get_buffer(), "foo(bar(bazbaz)qux)quux");
+
+        editor.move_to_position(4, false); // Move inside outer brackets
+        editor.yank_inside('(', ')');
+        assert_eq!(editor.get_buffer(), "foo(bar(bazbaz)qux)quux");
+        assert_eq!(editor.insertion_point(), 4);
+
+        // Test yanked content by pasting
+        editor.paste_cut_buffer();
+        assert_eq!(editor.get_buffer(), "foo(bar(bazbaz)quxbar(bazbaz)qux)quux");
     }
 }
