@@ -793,6 +793,42 @@ impl LineBuffer {
         right_char: char,
         cursor: usize,
     ) -> Option<(usize, usize)> {
+        // Special case: quotes or the same char for left & right
+        // (Vi doesn't do nested quotes, so no depth counting).
+        if left_char == right_char {
+            // 1) Walk left to find the first matching quote
+            let mut scan_pos = cursor;
+            while scan_pos > 0 {
+                // Move left by one grapheme
+                let mut tmp = LineBuffer {
+                    lines: self.lines.clone(),
+                    insertion_point: scan_pos,
+                };
+                tmp.move_left();
+                scan_pos = tmp.insertion_point;
+
+                if scan_pos >= self.lines.len() {
+                    break;
+                }
+                let ch = self.lines[scan_pos..].chars().next().unwrap_or('\0');
+                if ch == left_char {
+                    // Found the "left quote"
+                    let left_index = scan_pos;
+                    // 2) Now walk right to find the next matching quote
+                    let mut scan_pos_r = left_index + left_char.len_utf8();
+                    while scan_pos_r < self.lines.len() {
+                        let next_ch = self.lines[scan_pos_r..].chars().next().unwrap();
+                        if next_ch == right_char {
+                            return Some((left_index, scan_pos_r));
+                        }
+                        scan_pos_r += next_ch.len_utf8();
+                    }
+                    return None; // no right quote found
+                }
+            }
+            return None; // no left quote found
+        }
+
         // Step 1: search left
         let mut scan_pos = cursor;
         let mut depth = 0;
