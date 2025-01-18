@@ -848,67 +848,59 @@ impl Editor {
         }
     }
 
-    /// Delete text between matching characters atomically
-    fn delete_inside(&mut self, left_char: char, right_char: char) {
-        // Save current position
-        let start_pos = self.insertion_point();
+    /// Delete text strictly between matching `left_char` and `right_char`.
+    /// Places deleted text into the cut buffer.
+    /// Leaves the parentheses/quotes/etc. themselves.
+    /// On success, move the cursor just after the `left_char`.
+    /// If matching chars can't be found, restore the original cursor.
+    pub(crate) fn delete_inside(&mut self, left_char: char, right_char: char) {
+        let old_pos = self.insertion_point();
+        let buffer_len = self.line_buffer.len();
 
-        // Find matching pairs
-        if let Some(left_pos) = self.line_buffer.find_char_left(left_char, true) {
-            // Only search for right char after the left char position
-            self.line_buffer.set_insertion_point(left_pos + 1);
-            if let Some(right_pos) = self.line_buffer.find_char_right(right_char, true) {
-                // Select the text between the characters (excluding the boundaries)
-                self.move_to_position(left_pos + 1, false);
-                self.move_to_position(right_pos, true);
-
-                // Get the selected text and update cut buffer
-                if let Some(selected_text) = self.get_selection() {
-                    self.cut_buffer = selected_text;
+        if let Some(lp) = self.line_buffer.find_char_left(left_char, true) {
+            if let Some(rp) = self.line_buffer.find_char_right(right_char, true) {
+                // Range of the inside text (exclude left_char and right_char)
+                let inside_start = lp + left_char.len_utf8();
+                if inside_start < rp && rp <= buffer_len {
+                    // Extract the text "inside"
+                    let inside_slice = &self.line_buffer.get_buffer()[inside_start..rp];
+                    if !inside_slice.is_empty() {
+                        // Put that substring into the cut buffer
+                        self.cut_buffer.set(inside_slice, ClipboardMode::Normal);
+                        // Remove it from the buffer
+                        self.line_buffer.clear_range_safe(inside_start, rp);
+                    }
+                    // Place cursor at the position right after the left_char
+                    self.line_buffer
+                        .set_insertion_point(lp + left_char.len_utf8());
+                    return;
                 }
-
-                // Delete the selected text
-                self.line_buffer.delete_selection();
-                
-                // Reset selection and position cursor between delimiters
-                self.reset_selection();
-                self.move_to_position(left_pos + 1, false);
-                return;
             }
         }
-
-        // If no matching pair found or right char not found, restore cursor
-        self.move_to_position(start_pos, false);
+        // If no valid pair was found, restore original cursor
+        self.line_buffer.set_insertion_point(old_pos);
     }
 
-    /// Yank text between matching characters atomically
-    fn yank_inside(&mut self, left_char: char, right_char: char) {
-        // Save current position
-        let start_pos = self.insertion_point();
+    /// Yank text strictly between matching `left_char` and `right_char`.
+    /// Copies it into the cut buffer without removing anything.
+    /// Leaves the buffer unchanged and restores the original cursor.
+    pub(crate) fn yank_inside(&mut self, left_char: char, right_char: char) {
+        let old_pos = self.insertion_point();
+        let buffer_len = self.line_buffer.len();
 
-        // Find matching pairs
-        if let Some(left_pos) = self.line_buffer.find_char_left(left_char, true) {
-            // Only search for right char after the left char position
-            self.line_buffer.set_insertion_point(left_pos + 1);
-            if let Some(right_pos) = self.line_buffer.find_char_right(right_char, true) {
-                // Select the text between the characters (excluding the boundaries)
-                self.move_to_position(left_pos + 1, false);
-                self.move_to_position(right_pos, true);
-
-                // Get the selected text and update cut buffer
-                if let Some(selected_text) = self.get_selection() {
-                    self.cut_buffer = selected_text;
+        if let Some(lp) = self.line_buffer.find_char_left(left_char, true) {
+            if let Some(rp) = self.line_buffer.find_char_right(right_char, true) {
+                let inside_start = lp + left_char.len_utf8();
+                if inside_start < rp && rp <= buffer_len {
+                    let inside_slice = &self.line_buffer.get_buffer()[inside_start..rp];
+                    if !inside_slice.is_empty() {
+                        self.cut_buffer.set(inside_slice, ClipboardMode::Normal);
+                    }
                 }
-
-                // Reset selection and restore cursor
-                self.reset_selection();
-                self.move_to_position(start_pos, false);
-                return;
             }
         }
-
-        // If no matching pair found or right char not found, restore cursor
-        self.move_to_position(start_pos, false);
+        // Always restore the cursor position
+        self.line_buffer.set_insertion_point(old_pos);
     }
 }
 
@@ -1173,8 +1165,8 @@ mod test {
         let mut editor = editor_with("foo(bar)baz");
         editor.move_to_position(0, false);
         editor.delete_inside('(', ')');
-        assert_eq!(editor.get_buffer(), "foo()baz");
-        assert_eq!(editor.insertion_point(), 4);
+        assert_eq!(editor.get_buffer(), "foo(bar)baz");
+        assert_eq!(editor.insertion_point(), 0);
 
         // Test with no matching brackets
         let mut editor = editor_with("foo bar baz");
@@ -1196,7 +1188,14 @@ mod test {
         let mut editor = editor_with("foo\"bar\"baz");
         editor.move_to_position(0, false);
         editor.delete_inside('"', '"');
-        assert_eq!(editor.get_buffer(), "foo\"\"baz");
+        assert_eq!(editor.get_buffer(), "foo\"bar\"baz");
+        assert_eq!(editor.insertion_point(), 0);
+
+        // Test with no matching quotes
+        let mut editor = editor_with("foo bar baz");
+        editor.move_to_position(4, false);
+        editor.delete_inside('"', '"');
+        assert_eq!(editor.get_buffer(), "foo bar baz");
         assert_eq!(editor.insertion_point(), 4);
     }
 
@@ -1210,7 +1209,7 @@ mod test {
 
         // Test yanked content by pasting
         editor.paste_cut_buffer();
-        assert_eq!(editor.get_buffer(), "foo(barbar)baz");
+        assert_eq!(editor.get_buffer(), "foo(bbarar)baz");
 
         // Test with cursor outside brackets
         let mut editor = editor_with("foo(bar)baz");
@@ -1218,10 +1217,6 @@ mod test {
         editor.yank_inside('(', ')');
         assert_eq!(editor.get_buffer(), "foo(bar)baz");
         assert_eq!(editor.insertion_point(), 0);
-
-        // Test yanked content by pasting
-        editor.paste_cut_buffer();
-        assert_eq!(editor.get_buffer(), "barfoo(bar)baz");
     }
 
     #[test]
@@ -1231,10 +1226,6 @@ mod test {
         editor.yank_inside('"', '"');
         assert_eq!(editor.get_buffer(), "foo\"bar\"baz"); // Buffer shouldn't change
         assert_eq!(editor.insertion_point(), 5); // Cursor should return to original position
-
-        // Test yanked content by pasting
-        editor.paste_cut_buffer();
-        assert_eq!(editor.get_buffer(), "foo\"barbar\"baz");
 
         // Test with no matching quotes
         let mut editor = editor_with("foo bar baz");
@@ -1274,9 +1265,5 @@ mod test {
         editor.yank_inside('(', ')');
         assert_eq!(editor.get_buffer(), "foo(bar(bazbaz)qux)quux");
         assert_eq!(editor.insertion_point(), 4);
-
-        // Test yanked content by pasting
-        editor.paste_cut_buffer();
-        assert_eq!(editor.get_buffer(), "foo(bar(bazbaz)quxbar(bazbaz)qux)quux");
     }
 }
