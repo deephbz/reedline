@@ -229,36 +229,19 @@ impl Command {
             Self::ChangeInside(_) => {
                 vec![]
             }
-            Self::DeleteInside(left) if is_valid_change_inside_left(left) => {
-                let right = bracket_for(left);
-                vec![
-                    ReedlineOption::Edit(EditCommand::CutLeftBefore(*left)),
-                    ReedlineOption::Edit(EditCommand::CutRightBefore(right)),
-                ]
+            Self::DeleteInside(c) => {
+                let right_char = bracket_for(c);
+                vec![ReedlineOption::Edit(EditCommand::DeleteInside {
+                    left_char: *c,
+                    right_char,
+                })]
             }
-            Self::DeleteInside(right) if is_valid_change_inside_right(right) => {
-                let left = bracket_for(right);
-                vec![
-                    ReedlineOption::Edit(EditCommand::CutLeftBefore(left)),
-                    ReedlineOption::Edit(EditCommand::CutRightBefore(*right)),
-                ]
-            }
-            Self::DeleteInside(_) => {
-                vec![]
-            }
-            Self::YankInside(left) if is_valid_change_inside_left(left) => {
-                let right = bracket_for(left);
-                vec![
-                    ReedlineOption::Edit(EditCommand::CopyLeftBefore(*left)),
-                    ReedlineOption::Edit(EditCommand::CopyRightBefore(right)),
-                ]
-            }
-            Self::YankInside(right) if is_valid_change_inside_right(right) => {
-                let left = bracket_for(right);
-                vec![
-                    ReedlineOption::Edit(EditCommand::CopyLeftBefore(left)),
-                    ReedlineOption::Edit(EditCommand::CopyRightBefore(*right)),
-                ]
+            Self::YankInside(c) => {
+                let right_char = bracket_for(c);
+                vec![ReedlineOption::Edit(EditCommand::YankInside {
+                    left_char: *c,
+                    right_char,
+                })]
             }
             Self::YankInside(_) => {
                 vec![]

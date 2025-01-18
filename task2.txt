@@ -1,0 +1,85 @@
+# Task 2: Refactor Core Editor - Reduce Duplication in Cut/Copy Methods
+
+## Objective
+- **Streamline the `Editor` implementation** by eliminating duplicated logic in cut and copy methods.
+- **Enhance code maintainability and readability** by consolidating similar functionalities.
+- **Ensure existing functionalities remain intact** or are appropriately modified to fit the new design.
+
+## Subtasks
+
+### 1. Identify Duplication in `editor.rs`
+- **Review Existing Cut/Copy Methods**
+  - Examine methods like `cut_word_right_to_next`, `copy_word_right_to_next`, `cut_word_left`, `copy_word_left`, etc.
+- **Map Similar Functionalities**
+  - Create a list of methods that perform similar or identical operations with slight variations.
+
+### 2. Analyze Current `EditCommand` Definitions
+- **Inspect `EditCommand` Enum**
+  - Identify all variants related to cut and copy operations.
+  - Determine if certain variants can be generalized or parameterized.
+
+### 3. Consolidate Cut/Copy Operations
+- **Create Generic Helper Methods**
+  - Develop helper functions that encapsulate the shared logic between different cut/copy methods.
+  - Parameters can include direction (`left`, `right`), scope (`word`, `big word`), and destination (`to_next`, etc.).
+- **Refactor Existing Methods**
+  - Replace the logic in specific cut/copy methods with calls to the new generic helper methods.
+  - Ensure that each original method still behaves identically from the caller's perspective.
+
+### 4. Update `EditCommand` Variants
+- **Generalize `EditCommand` Enum Variants**
+  - Modify existing variants to accept parameters that define their specific behavior.
+  - For example, instead of `CutWordRightToNext` and `CutWordLeftToNext`, create a single `CutWord` variant with directional parameters.
+- **Ensure Backward Compatibility**
+  - Update all instances where `EditCommand` variants are used to accommodate the new generalized variants.
+
+### 5. Refactor Command Execution in `Editor`
+- **Modify `run_edit_command` Method**
+  - Adjust the match arms to handle the new, consolidated `EditCommand` variants.
+  - Ensure that the correct parameters are passed to helper methods based on command variants.
+- **Maintain Functionality**
+  - Verify that the refactored execution flow performs cut/copy operations as intended without introducing regressions.
+
+### 6. Update Command Parsing and Translation Layers
+- **Adjust `command.rs` and Related Files**
+  - Ensure that command parsing logic maps user inputs to the updated, generalized `EditCommand` variants.
+  - Update translation methods to generate appropriate parameters for the consolidated commands.
+
+### 7. Enhance `EditCommand` Definitions in `enums.rs`
+- **Document Parameter Usage**
+  - Clearly define how parameters influence the behavior of generalized `EditCommand` variants.
+- **Simplify Enum Structure**
+  - Reduce the number of enum variants by leveraging parameters to handle variations in command behavior.
+
+### 8. Develop Comprehensive Tests
+- **Create or Update Unit Tests**
+  - Ensure that all cut/copy functionalities are thoroughly tested with the new implementation.
+  - Include tests for edge cases and various parameter combinations.
+- **Validate Refactored Methods**
+  - Confirm that the behavior of refactored methods matches that of the original implementations.
+
+### 9. Optimize Performance
+- **Assess Efficiency of Helper Methods**
+  - Ensure that consolidating methods does not introduce performance overhead.
+- **Implement Caching or Memoization if Necessary**
+  - Optimize frequently called helper methods to enhance performance.
+
+### 10. Update Documentation and Comments
+- **Document Refactored Structure**
+  - Explain the rationale behind consolidating cut/copy methods and how the new structure operates.
+- **Provide Usage Examples**
+  - Include examples demonstrating how to use the generalized `EditCommand` variants.
+
+### 11. Refactor and Clean Up Codebase
+- **Remove Redundant Code**
+  - Delete old, now-unnecessary methods related to cut/copy operations.
+- **Ensure Code Consistency**
+  - Maintain consistent naming conventions and coding standards throughout the refactored code.
+
+### 12. Review and Finalize Refactoring
+- **Conduct Code Reviews**
+  - Have peers review the refactored implementation to ensure it meets design goals and maintains functionality.
+- **Iterate Based on Feedback**
+  - Make necessary adjustments based on feedback to refine the refactoring efforts.
+
+---

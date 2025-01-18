@@ -329,6 +329,30 @@ pub enum EditCommand {
     /// Paste content from system clipboard at the current cursor position
     #[cfg(feature = "system_clipboard")]
     PasteSystem,
+
+    /// Delete from cursor to matching character atomically
+    DeleteToChar {
+        /// Character to delete up to
+        character: char,
+        /// Whether to delete up to before or including the character
+        before_char: bool,
+        /// Whether to only search in current line
+        current_line: bool,
+    },
+    /// Delete text between matching characters atomically
+    DeleteInside {
+        /// Left character of the pair
+        left_char: char,
+        /// Right character of the pair (usually matching bracket)
+        right_char: char,
+    },
+    /// Yank text between matching characters atomically
+    YankInside {
+        /// Left character of the pair
+        left_char: char,
+        /// Right character of the pair (usually matching bracket)
+        right_char: char,
+    },
 }
 
 impl Display for EditCommand {
@@ -439,6 +463,12 @@ impl Display for EditCommand {
             EditCommand::CopySelectionSystem => write!(f, "CopySelectionSystem"),
             #[cfg(feature = "system_clipboard")]
             EditCommand::PasteSystem => write!(f, "PasteSystem"),
+            EditCommand::DeleteToChar { .. } => write!(
+                f,
+                "DeleteToChar Value: <char>, Optional[before_char: <bool>, current_line: <bool>]"
+            ),
+            EditCommand::DeleteInside { .. } => write!(f, "DeleteInside Value: <char> <char>"),
+            EditCommand::YankInside { .. } => write!(f, "YankInside Value: <char> <char>"),
         }
     }
 }
@@ -536,6 +566,9 @@ impl EditCommand {
             | EditCommand::CopyRightBefore(_)
             | EditCommand::CopyLeftUntil(_)
             | EditCommand::CopyLeftBefore(_) => EditType::NoOp,
+            EditCommand::DeleteToChar { .. } => EditType::EditText,
+            EditCommand::DeleteInside { .. } => EditType::EditText,
+            EditCommand::YankInside { .. } => EditType::EditText,
         }
     }
 }

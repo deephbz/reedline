@@ -1,0 +1,82 @@
+```txt:tasks1.txt
+# Task 1: Redesign Vi Edit Mode - Atomic Implementation of Delete/YankInside
+
+## Objective
+- **Enhance the Vi edit mode** by redesigning the implementation of `Delete` and `YankInside` commands.
+- **Ensure atomicity** in executing these commands to maintain consistency and reliability.
+- **Improve code clarity and maintainability** by adopting a cleaner design pattern.
+
+## Subtasks
+
+### 1. Analyze Current Implementation
+- **Review `command.rs`**
+  - Examine how keyboard inputs are parsed into `Command` enums.
+  - Identify how `Delete` and `YankInside` commands are currently handled.
+- **Review `enums.rs`**
+  - Inspect the `EditCommand` enum definitions for `Delete` and related commands.
+- **Review `editor.rs`**
+  - Understand how `EditCommand::Delete` and `EditCommand::CutSelection` are executed.
+  - Identify dependencies and interactions between methods handling these commands.
+
+### 2. Define Atomicity for Delete/YankInside
+- **Specify Atomic Operation Requirements**
+  - Ensure that `Delete` and `YankInside` execute as single, indivisible operations.
+  - Prevent partial execution that could lead to inconsistent states.
+- **Determine State Management Needs**
+  - Assess how undo/redo functionality interacts with these commands.
+  - Ensure that the entire operation can be reversed or reapplied seamlessly.
+
+### 3. Design Enhanced `EditCommand` Variants
+- **Introduce New Enum Variants if Necessary**
+  - Create specific variants for atomic `Delete` and `YankInside` operations, e.g., `DeleteAtomic`, `YankInsideAtomic`.
+- **Ensure Comprehensive Coverage**
+  - Make sure all necessary variations of delete and yank operations are accounted for.
+
+### 4. Update Command Parsing and Translation Layers
+- **Modify `parse_command` Function**
+  - Adjust the parsing logic to recognize and correctly interpret atomic commands.
+- **Enhance `Command::to_reedline` Method**
+  - Translate the new atomic `Command` variants into corresponding `ReedlineOption`s.
+  - Ensure that the translation maintains atomicity by bundling related `EditCommand`s.
+
+### 5. Implement Atomic Execution in `Editor`
+- **Refactor `run_edit_command` Method**
+  - Handle the new atomic `EditCommand` variants.
+  - Ensure that all related actions are executed within a single, cohesive method call.
+- **Manage Undo/Redo Stack Appropriately**
+  - Update the `EditStack` to treat atomic commands as single entries.
+  - Ensure that undoing an atomic command reverts all associated changes.
+
+### 6. Ensure Consistency and Reliability
+- **Centralize State Management**
+  - Ensure that selection anchors and cursor positions are consistently managed during atomic operations.
+- **Handle Edge Cases**
+  - Address scenarios where atomic commands might fail or encounter unexpected states.
+
+### 7. Update Documentation and Comments
+- **Document New Design Patterns**
+  - Clearly explain the rationale behind making `Delete` and `YankInside` atomic.
+- **Provide Usage Examples**
+  - Include examples demonstrating the execution and undoing of atomic commands.
+
+### 8. Develop Comprehensive Tests
+- **Create Unit Tests for New Commands**
+  - Test atomic execution of `Delete` and `YankInside` to ensure they function as intended.
+- **Validate Undo/Redo Functionality**
+  - Ensure that undoing and redoing atomic commands accurately restores previous states.
+- **Test Edge Cases and Error Handling**
+  - Verify that the system gracefully handles invalid inputs or unexpected states during atomic operations.
+
+### 9. Refactor and Optimize Codebase
+- **Remove Redundant Code**
+  - Eliminate any duplicated logic resulting from previous implementations of `Delete` and `YankInside`.
+- **Optimize Performance**
+  - Ensure that making commands atomic does not introduce performance bottlenecks.
+
+### 10. Review and Finalize Design
+- **Conduct Code Reviews**
+  - Have peers review the redesigned implementation for adherence to best practices and design principles.
+- **Iterate Based on Feedback**
+  - Make necessary adjustments based on code review feedback to refine the implementation.
+
+---
